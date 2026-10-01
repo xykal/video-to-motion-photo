@@ -38,7 +38,8 @@ public final class VideoProcessor {
 
     public interface ProgressListener { void onProgress(String stage, int percent); }
 
-    public void stabilize(File source, File output, ProgressListener listener) throws Exception {
+    public void process(File source, File output, long startMs, long endMs,
+                        boolean stabilize, ProgressListener listener) throws Exception {
         final float[][] offsets;
         final int bitrate;
         try (MediaMetadataRetriever retriever = new MediaMetadataRetriever()) {
@@ -46,19 +47,20 @@ public final class VideoProcessor {
             String duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
             if (duration == null) throw new IllegalArgumentException("Durasi video tidak diketahui");
             long durationMs = Long.parseLong(duration);
-            if (durationMs <= 0 || durationMs > MAX_DURATION_MS) {
-                throw new IllegalArgumentException("Stabilisasi saat ini mendukung video 1–30 detik");
+            if (durationMs <= 0 || startMs < 0 || endMs > durationMs + 200 || endMs - startMs < 1000
+                    || endMs - startMs > MAX_DURATION_MS) {
+                throw new IllegalArgumentException("Pangkas video dengan durasi 1–30 detik");
             }
             String w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
             String h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
             if (w == null || h == null) throw new IllegalArgumentException("Dimensi video tidak tersedia");
             long pixels = (long) Integer.parseInt(w) * Integer.parseInt(h);
             bitrate = pixels > 1920L * 1080 ? 25000000 : pixels > 1280L * 720 ? 12000000 : 8000000;
-            int samples = (int) (durationMs / SAMPLE_MS) + 1;
+            int samples = stabilize ? (int) ((endMs - startMs) / SAMPLE_MS) + 1 : 1;
             float[] x = new float[samples], y = new float[samples];
             int[] previous = null;
-            for (int i = 0; i < samples; i++) {
-                long timeUs = Math.min(durationMs - 1, (long) i * SAMPLE_MS) * 1000;
+            for (int i = 0; stabilize && i < samples; i++) {
+                long timeUs = Math.min(endMs - 1, startMs + (long) i * SAMPLE_MS) * 1000;
                 Bitmap bitmap = retriever.getScaledFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST, 128, 128);
                 if (bitmap == null) throw new IllegalArgumentException("Frame video tidak bisa dianalisis");
                 Bitmap scaled = Bitmap.createScaledBitmap(bitmap, 96, 96, true);
@@ -96,9 +98,15 @@ public final class VideoProcessor {
         AtomicReference<Transformer> currentTransformer = new AtomicReference<>();
         main.post(() -> {
             try {
-                Effect effect = motion;
-                EditedMediaItem item = new EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(source)))
-                        .setEffects(new Effects(Collections.emptyList(), Collections.singletonList(effect))).build();
+                MediaItem clip = new MediaItem.Builder().setUri(Uri.fromFile(source))
+                        .setClippingConfiguration(new MediaItem.ClippingConfiguration.Builder()
+                                .setStartPositionMs(startMs).setEndPositionMs(endMs).build()).build();
+                EditedMediaItem.Builder edited = new EditedMediaItem.Builder(clip);
+                if (stabilize) {
+                    Effect effect = motion;
+                    edited.setEffects(new Effects(Collections.emptyList(), Collections.singletonList(effect)));
+                }
+                EditedMediaItem item = edited.build();
                 Transformer transformer = new Transformer.Builder(context)
                         .setVideoMimeType(MimeTypes.VIDEO_H264)
                         .setEncoderFactory(new DefaultEncoderFactory.Builder(context)

@@ -3,7 +3,7 @@
 ![Logo Motion Photo Studio](assets/motion-mark-small.png)
 
 ## Bahasa Indonesia
-Aplikasi Android native (Java) yang mengambil frame tengah dari MP4 dan menyimpan JPEG + MP4 dalam satu berkas Motion Photo. Semua diproses offline. Pilih sampul pada 25%, 50%, atau 75% durasi; koreksi warna/kontras dan pengurangan noise ringan bekerja pada foto sampul saja, bukan videonya. Stabilisasi translasi video offline (eksperimental) tersedia untuk durasi hingga 30 detik, dengan crop tepi dan encode ulang H.264 bitrate tinggi. Tidak memperbaiki blur berat, sumber resolusi rendah, atau kompresi ulang TikTok. Android 10+; batas ukuran 300 MB. Google Photos dan Samsung Gallery perlu diverifikasi pada perangkat nyata; deteksi Motion Photo bukan jaminan lintas galeri. Tidak membuat Apple Live Photo atau live wallpaper.
+Aplikasi Android native (Java) yang mengambil frame tengah dari MP4 dan menyimpan JPEG + MP4 dalam satu berkas Motion Photo. Semua diproses offline. Setelah memilih video, pangkas awal/akhir pada layar tersendiri (1–30 detik) dan pratinjau potongannya; lalu pilih sampul pada 25%, 50%, atau 75% durasi potongan; koreksi warna/kontras dan pengurangan noise ringan bekerja pada foto sampul saja, bukan videonya. Stabilisasi translasi video offline (eksperimental) tersedia untuk durasi hingga 30 detik, dengan crop tepi dan encode ulang H.264 bitrate tinggi. Tidak memperbaiki blur berat, sumber resolusi rendah, atau kompresi ulang TikTok. Android 10+; batas ukuran 300 MB. Google Photos dan Samsung Gallery perlu diverifikasi pada perangkat nyata; deteksi Motion Photo bukan jaminan lintas galeri. Tidak membuat Apple Live Photo atau live wallpaper.
 
 Buka proyek di Android Studio (JDK 17), sync Gradle, lalu jalankan modul `app`. Proyek belum menyertakan Gradle wrapper; buat wrapper melalui instalasi Gradle tepercaya sebelum CI diaktifkan. Jangan masukkan file dari `uploads` atau kunci signing ke repo.
 
@@ -18,3 +18,5 @@ Built by xykal — XyVerse Technology Global
 
 ### Build notes / Catatan build
 Release v0.3.1 enables R8 code shrinking, optimization and resource shrinking. Export progress shows the current phase and percentage; remaining time is an estimate, not a deadline. Installing an older draft over a newer one may be blocked by Android versionCode rules.
+
+Version 0.4.0 adds a trim screen before editing. The selected interval, not the full source, is transformed and embedded in the Motion Photo. Imported source files still have a 300 MB read limit.

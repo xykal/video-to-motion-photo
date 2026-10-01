@@ -57,7 +57,7 @@ jobs:
           APK=app/build/outputs/apk/release/app-release.apk
           test -s "$APK"
           test -f "$ANDROID_KEYSTORE_FILE"
-          TAG="v0.3.1-build.${GITHUB_RUN_NUMBER}"
+          TAG="v0.4.0-build.${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" "$APK#video-to-motion-photo-${TAG}.apk" --draft --title "$TAG" --notes 'Signed draft APK. Gallery compatibility requires physical-device testing.' --target "$GITHUB_SHA"
       - name: Delete transient keystore
         if: always()

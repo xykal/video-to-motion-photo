@@ -30,7 +30,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
-    private static final int PICK_VIDEO = 10;
+    private static final int PICK_VIDEO = 10, TRIM_VIDEO = 11;
     private static final long MAX_BYTES = 300L * 1024 * 1024;
     private static final int INK = 0xff202521, MUTED = 0xff656d67, CREAM = 0xfff7f4ed;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -41,7 +41,8 @@ public final class MainActivity extends Activity {
     private volatile String lastProgressStage = "";
     private final TextView[] coverButtons = new TextView[3];
     private ImageView preview;
-    private Uri selected;
+    private Uri selected, pending;
+    private long clipStartMs, clipEndMs;
     private boolean enhance, denoise, busy, stabilize = true;
     private int coverIndex = 1, previewGeneration;
 
@@ -119,9 +120,10 @@ public final class MainActivity extends Activity {
             Uri input = selected;
             int index = coverIndex;
             boolean correction = enhance, smoothing = denoise, stabilizeVideo = stabilize;
+            long startMs = clipStartMs, endMs = clipEndMs;
             worker.execute(() -> {
                 try {
-                    convert(input, index, correction, smoothing, stabilizeVideo);
+                    convert(input, index, correction, smoothing, stabilizeVideo, startMs, endMs);
                     postProgress("Selesai. Cek Pictures/MotionPhoto di galeri", 100);
                 } catch (Exception error) {
                     runOnUiThread(() -> { progressMeter.setVisibility(View.GONE); status.setText("Gagal: " + error.getMessage()); });
@@ -143,10 +145,25 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (request != PICK_VIDEO || result != RESULT_OK || data == null || data.getData() == null) return;
-        selected = data.getData();
-        status.setText("Video terpilih. Atur sampul lalu ekspor.");
-        showPreview();
+        if (request == PICK_VIDEO && result == RESULT_OK && data != null && data.getData() != null) {
+            pending = data.getData();
+            Intent trim = new Intent(this, TrimActivity.class);
+            trim.setData(pending);
+            trim.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivityForResult(trim, TRIM_VIDEO);
+        } else if (request == TRIM_VIDEO && result == RESULT_OK && data != null && pending != null) {
+            long start = data.getLongExtra("startMs", -1);
+            long end = data.getLongExtra("endMs", -1);
+            if (start < 0 || end - start < 1000 || end - start > 30000) {
+                status.setText("Durasi potongan tidak valid. Pilih ulang video.");
+                return;
+            }
+            selected = pending;
+            clipStartMs = start;
+            clipEndMs = end;
+            status.setText("Potongan " + TrimRangeView.format(end - start) + " siap. Atur sampul lalu ekspor.");
+            showPreview();
+        }
     }
 
     private void showPreview() {
@@ -155,10 +172,11 @@ public final class MainActivity extends Activity {
         int generation = ++previewGeneration;
         int index = coverIndex;
         boolean correction = enhance, smoothing = denoise;
+        long startMs = clipStartMs, endMs = clipEndMs;
         worker.execute(() -> {
             try (MediaMetadataRetriever retriever = new MediaMetadataRetriever()) {
                 retriever.setDataSource(this, input);
-                Bitmap frame = getCover(retriever, index);
+                Bitmap frame = getCover(retriever, index, startMs, endMs);
                 Bitmap adjusted = CoverProcessor.process(frame, correction, smoothing);
                 if (adjusted != frame) frame.recycle();
                 Bitmap result = adjusted;
@@ -172,18 +190,21 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private Bitmap getCover(MediaMetadataRetriever retriever, int index) {
+    private Bitmap getCover(MediaMetadataRetriever retriever, int index, long startMs, long endMs) {
         String duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
         if (duration == null) throw new IllegalArgumentException("Durasi video tidak tersedia");
         long millis = Long.parseLong(duration);
         if (millis <= 0) throw new IllegalArgumentException("Durasi video tidak valid");
-        long microseconds = Math.multiplyExact(millis, (index + 1) * 250L);
+        long clipEnd = endMs > 0 ? Math.min(endMs, millis) : millis;
+        if (clipEnd <= startMs) throw new IllegalArgumentException("Durasi potongan tidak valid");
+        long microseconds = (startMs + (clipEnd - startMs) * (index + 1) / 4) * 1000;
         Bitmap frame = retriever.getScaledFrameAtTime(microseconds, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 1600, 1600);
         if (frame == null) throw new IllegalArgumentException("Frame tidak bisa dibaca");
         return frame;
     }
 
-    private void convert(Uri source, int index, boolean correction, boolean smoothing, boolean stabilizeVideo) throws Exception {
+    private void convert(Uri source, int index, boolean correction, boolean smoothing,
+                         boolean stabilizeVideo, long startMs, long endMs) throws Exception {
         File temp = File.createTempFile("motion_", ".mp4", getCacheDir());
         long declaredSize = -1;
         try (Cursor cursor = getContentResolver().query(source, new String[]{OpenableColumns.SIZE}, null, null, null)) {
@@ -207,9 +228,10 @@ public final class MainActivity extends Activity {
                 }
             }
             postProgress("Video siap", 10);
-            if (stabilizeVideo) {
+            if (endMs <= startMs) throw new IllegalArgumentException("Pilih bagian video untuk dipangkas");
+            {
                 processed = new File(getCacheDir(), "processed_" + java.util.UUID.randomUUID() + ".mp4");
-                new VideoProcessor(this).stabilize(temp, processed,
+                new VideoProcessor(this).process(temp, processed, startMs, endMs, stabilizeVideo,
                         (stage, percent) -> postProgress(stage, 10 + percent * 80 / 100));
                 temp.delete();
                 temp = processed;
@@ -222,7 +244,7 @@ public final class MainActivity extends Activity {
                 retriever.setDataSource(temp.getAbsolutePath());
                 String mime = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE);
                 if (!"video/mp4".equalsIgnoreCase(mime)) throw new IllegalArgumentException("Hanya MP4 yang didukung");
-                Bitmap frame = getCover(retriever, index);
+                Bitmap frame = getCover(retriever, index, 0, 0);
                 Bitmap adjusted = CoverProcessor.process(frame, correction, smoothing);
                 if (adjusted != frame) frame.recycle();
                 try (ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {

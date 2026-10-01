@@ -25,3 +25,6 @@ SAF supplies input access; output uses MediaStore pending state and cleans up fa
 
 ## Offline stabilization v0.3 (experimental)
 For videos up to 30 seconds, sample 5 frames/s at low resolution, estimate global translations with luma block matching, smooth the motion path, and apply interpolated per-frame matrix corrections in Media3 Transformer. Re-encode H.264 with requested 8–25 Mbps depending on source resolution and retain the audio track. The Motion Photo embeds the processed video; no separate MP4 export. This does not correct rotation, rolling shutter, strong parallax, motion blur, or compression already in the source. Cropping is required; the output is not guaranteed to survive TikTok recompression unchanged. Test on physical low/mid/high-tier devices and real moving-subject footage before publishing.
+
+## Trim before edit (v0.4)
+After file selection, display a dedicated range editor with two handles and a native video preview without stock controls. Permit a 1–30-second interval anywhere in the source. Preserve the precise interval in Media3 clipping before optional stabilization; choose the still cover from the selected interval. Do not claim frame-perfect preview seeking (device decoders may snap to a keyframe).
