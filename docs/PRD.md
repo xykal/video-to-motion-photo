@@ -1,0 +1,24 @@
+# Product brief
+
+## Ringkasan
+- Aplikasi Android native, pemrosesan offline.
+- Input MP4 melalui pemilih dokumen sistem.
+- Ambil satu frame di tengah sebagai cover JPEG.
+- Sisipkan metadata XMP dan MP4 utuh di belakang JPEG.
+- Simpan melalui MediaStore ke Pictures/MotionPhoto.
+- Target Google Photos dan Samsung Gallery; kompatibilitas perlu diuji.
+- Bukan Apple Live Photo maupun wallpaper bergerak.
+- Batas 300 MB untuk mencegah penggunaan ruang tanpa batas.
+- Tidak meminta izin akses seluruh penyimpanan.
+- Rilis signed memerlukan keystore yang disimpan permanen oleh pemilik.
+
+## Scope and constraints
+Single local conversion, no cloud, no analytics, no watermark. Target Android API 29+. Uses a JPEG XMP APP1 packet with Camera MotionPhoto and legacy MicroVideo metadata, Container Directory entries and an MP4 tail. The motion duration is the original MP4 duration; file format alone cannot guarantee playback in a specific gallery. The midpoint frame is a sync frame; the visual cover may differ slightly from the exact midpoint. Large decoded frames may trigger memory pressure: improve with a scaled-frame API before raising the input cap.
+
+## Security and release
+SAF supplies input access; output uses MediaStore pending state and cleans up failures. No credentials shipped to the client. A signed release must use persistent owner-held signing credentials; CI may receive only GitHub Secrets and should remove transient artifacts. CI run history is retained by GitHub and cannot honestly be described as erased.
+
+## Milestones
+1. Source and writer (2026-10-01): local implementation; build unverified.
+2. CI and signed draft release: blocked until persistent keystore and repository automation available.
+3. Device validation: real MP4s on Google Photos and Samsung Gallery, including audio, portrait rotation, and large files.
