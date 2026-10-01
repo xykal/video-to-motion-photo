@@ -35,7 +35,7 @@ public final class MainActivity extends Activity {
     private static final long MAX_BYTES = 300L * 1024 * 1024;
     private static final int INK = 0xff202521, MUTED = 0xff656d67, CREAM = 0xfff7f4ed;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private TextView status, export, enhanceButton, denoiseButton, stabilizeButton;
+    private TextView status, export, enhanceButton, denoiseButton, stabilizeButton, watermarkButton;
     private ProgressMeter progressMeter;
     private long startedAtMs;
     private volatile int lastProgressValue = -1;
@@ -44,7 +44,7 @@ public final class MainActivity extends Activity {
     private ImageView preview;
     private Uri selected, pending;
     private long clipStartMs, clipEndMs;
-    private boolean enhance, denoise, busy, stabilize = true;
+    private boolean enhance, denoise, busy, stabilize = true, watermark;
     private int coverIndex = 1, previewGeneration;
 
     @Override public void onCreate(Bundle state) {
@@ -52,19 +52,22 @@ public final class MainActivity extends Activity {
         getWindow().setStatusBarColor(CREAM);
         getWindow().setNavigationBarColor(CREAM);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setBackgroundColor(CREAM);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(CREAM);
+        screen.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(24), dp(38), dp(24), dp(40));
+        page.setPadding(dp(24), dp(24), dp(24), dp(24));
         scroll.addView(page);
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.mipmap.ic_launcher);
-        page.addView(logo, new LinearLayout.LayoutParams(dp(58), dp(58)));
+        page.addView(logo, new LinearLayout.LayoutParams(dp(46), dp(46)));
         TextView label = text("MOTION PHOTO STUDIO", 12, 0xffab534b, true);
         page.addView(label, margin(0, 20));
-        TextView title = text("A moment,\nmade to move.", 34, INK, true);
+        TextView title = text("Momen yang\ntetap bergerak.", 30, INK, true);
         page.addView(title, margin(0, 6));
         page.addView(text("Ubah klip favorit jadi foto bergerak. Diproses di HP, tanpa unggah video.", 15, MUTED, false), margin(0, 12));
 
@@ -107,7 +110,16 @@ public final class MainActivity extends Activity {
         stabilizeButton = action("Stabilkan video · aktif", false);
         stabilizeButton.setOnClickListener(v -> { stabilize = !stabilize; refreshStyles(); });
         page.addView(stabilizeButton, margin(0, 8));
-        page.addView(text("Stabilisasi translasi offline, durasi maks. 30 detik. Crop tepi 8% dan encode H.264 bitrate tinggi. Koreksi warna/noise hanya pada sampul; sumber buram tidak bisa dipulihkan.", 12, MUTED, false), margin(10, 0));
+        page.addView(text("Stabilisasi translasi offline; crop tepi dan video di-encode ulang. Ini tidak memulihkan blur atau resolusi yang hilang.", 12, MUTED, false), margin(10, 0));
+        page.addView(text("04  TANDA ASAL · OPSIONAL", 12, MUTED, true), margin(24, 12));
+        watermarkButton = action("Watermark kaca · mati", false);
+        watermarkButton.setOnClickListener(v -> { watermark = !watermark; refreshStyles(); showPreview(); });
+        page.addView(watermarkButton, margin(0, 8));
+        page.addView(text("Tampil di foto dan video. Kamera asal & waktu rekam hanya ditulis bila data sumber tersedia; MP berarti resolusi frame, bukan sensor.", 12, MUTED, false), margin(8, 0));
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.VERTICAL);
+        footer.setPadding(dp(24), dp(10), dp(24), dp(20));
+        footer.setBackgroundColor(CREAM);
         export = action("Buat Motion Photo", true);
         setIcon(export, R.drawable.ic_motion, Color.WHITE);
         export.setOnClickListener(v -> {
@@ -122,11 +134,11 @@ public final class MainActivity extends Activity {
             status.setText("Menyiapkan video…");
             Uri input = selected;
             int index = coverIndex;
-            boolean correction = enhance, smoothing = denoise, stabilizeVideo = stabilize;
+            boolean correction = enhance, smoothing = denoise, stabilizeVideo = stabilize, addWatermark = watermark;
             long startMs = clipStartMs, endMs = clipEndMs;
             worker.execute(() -> {
                 try {
-                    convert(input, index, correction, smoothing, stabilizeVideo, startMs, endMs);
+                    convert(input, index, correction, smoothing, stabilizeVideo, addWatermark, startMs, endMs);
                     postProgress("Selesai. Cek Pictures/MotionPhoto di galeri", 100);
                 } catch (Exception error) {
                     runOnUiThread(() -> { progressMeter.setVisibility(View.GONE); status.setText("Gagal: " + error.getMessage()); });
@@ -135,14 +147,17 @@ public final class MainActivity extends Activity {
                 }
             });
         });
-        page.addView(export, margin(24, 0));
+        export.setEnabled(false);
+        export.setAlpha(.5f);
+        footer.addView(export, new LinearLayout.LayoutParams(-1, dp(56)));
         progressMeter = new ProgressMeter(this);
         progressMeter.setVisibility(View.GONE);
-        page.addView(progressMeter, new LinearLayout.LayoutParams(-1, dp(8)));
+        footer.addView(progressMeter, new LinearLayout.LayoutParams(-1, dp(8)));
         status = text("Pilih MP4 maksimal 300 MB untuk mulai.", 13, MUTED, false);
-        page.addView(status, margin(12, 0));
-        page.addView(text("Offline • Android 10+ • Powered by " + Brand.NAME, 11, MUTED, false), margin(34, 0));
-        setContentView(scroll);
+        footer.addView(status, margin(10, 0));
+        page.addView(text("Offline • Android 10+ • Powered by " + Brand.NAME, 11, MUTED, false), margin(26, 0));
+        screen.addView(footer, new LinearLayout.LayoutParams(-1, -2));
+        setContentView(screen);
         refreshStyles();
     }
 
@@ -162,6 +177,8 @@ public final class MainActivity extends Activity {
                 return;
             }
             selected = pending;
+            export.setEnabled(true);
+            export.setAlpha(1f);
             clipStartMs = start;
             clipEndMs = end;
             status.setText("Potongan " + TrimRangeView.format(end - start) + " siap. Atur sampul lalu ekspor.");
@@ -174,7 +191,7 @@ public final class MainActivity extends Activity {
         if (input == null) return;
         int generation = ++previewGeneration;
         int index = coverIndex;
-        boolean correction = enhance, smoothing = denoise;
+        boolean correction = enhance, smoothing = denoise, showWatermark = watermark;
         long startMs = clipStartMs, endMs = clipEndMs;
         worker.execute(() -> {
             try (MediaMetadataRetriever retriever = new MediaMetadataRetriever()) {
@@ -182,7 +199,9 @@ public final class MainActivity extends Activity {
                 Bitmap frame = getCover(retriever, index, startMs, endMs);
                 Bitmap adjusted = CoverProcessor.process(frame, correction, smoothing);
                 if (adjusted != frame) frame.recycle();
-                Bitmap result = adjusted;
+                Bitmap result = showWatermark
+                        ? WatermarkRenderer.stampCover(adjusted, WatermarkRenderer.inspect(retriever)) : adjusted;
+                if (result != adjusted) adjusted.recycle();
                 runOnUiThread(() -> {
                     if (generation == previewGeneration && !isDestroyed()) preview.setImageBitmap(result);
                     else result.recycle();
@@ -207,7 +226,7 @@ public final class MainActivity extends Activity {
     }
 
     private void convert(Uri source, int index, boolean correction, boolean smoothing,
-                         boolean stabilizeVideo, long startMs, long endMs) throws Exception {
+                         boolean stabilizeVideo, boolean addWatermark, long startMs, long endMs) throws Exception {
         File temp = File.createTempFile("motion_", ".mp4", getCacheDir());
         long declaredSize = -1;
         try (Cursor cursor = getContentResolver().query(source, new String[]{OpenableColumns.SIZE}, null, null, null)) {
@@ -232,9 +251,16 @@ public final class MainActivity extends Activity {
             }
             postProgress("Video siap", 10);
             if (endMs <= startMs) throw new IllegalArgumentException("Pilih bagian video untuk dipangkas");
+            WatermarkRenderer.Info sourceInfo = null;
+            if (addWatermark) {
+                try (MediaMetadataRetriever sourceRetriever = new MediaMetadataRetriever()) {
+                    sourceRetriever.setDataSource(temp.getAbsolutePath());
+                    sourceInfo = WatermarkRenderer.inspect(sourceRetriever);
+                }
+            }
             {
                 processed = new File(getCacheDir(), "processed_" + java.util.UUID.randomUUID() + ".mp4");
-                new VideoProcessor(this).process(temp, processed, startMs, endMs, stabilizeVideo,
+                new VideoProcessor(this).process(temp, processed, startMs, endMs, stabilizeVideo, addWatermark,
                         (stage, percent) -> postProgress(stage, 10 + percent * 80 / 100));
                 temp.delete();
                 temp = processed;
@@ -250,6 +276,11 @@ public final class MainActivity extends Activity {
                 Bitmap frame = getCover(retriever, index, 0, 0);
                 Bitmap adjusted = CoverProcessor.process(frame, correction, smoothing);
                 if (adjusted != frame) frame.recycle();
+                if (addWatermark) {
+                    Bitmap decorated = WatermarkRenderer.stampCover(adjusted, sourceInfo);
+                    adjusted.recycle();
+                    adjusted = decorated;
+                }
                 try (ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
                     try {
                         if (!adjusted.compress(Bitmap.CompressFormat.JPEG, 90, bytes)) throw new IllegalStateException("Gagal mengode JPEG");
@@ -315,6 +346,9 @@ public final class MainActivity extends Activity {
         stabilizeButton.setText(stabilize ? "Stabilkan video · aktif" : "Stabilkan video · nonaktif");
         stabilizeButton.setBackground(shape(stabilize ? INK : Color.WHITE, 14, 0xffe4e4dd));
         stabilizeButton.setTextColor(stabilize ? Color.WHITE : INK);
+        watermarkButton.setText(watermark ? "Watermark kaca · aktif" : "Watermark kaca · mati");
+        watermarkButton.setBackground(shape(watermark ? INK : Color.WHITE, 14, 0xffe4e4dd));
+        watermarkButton.setTextColor(watermark ? Color.WHITE : INK);
     }
 
     private TextView action(String value, boolean primary) {

@@ -12,6 +12,9 @@ import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.effect.MatrixTransformation;
+import androidx.media3.effect.BitmapOverlay;
+import androidx.media3.effect.OverlayEffect;
+import androidx.media3.effect.StaticOverlaySettings;
 import androidx.media3.transformer.Composition;
 import androidx.media3.transformer.DefaultEncoderFactory;
 import androidx.media3.transformer.EditedMediaItem;
@@ -23,6 +26,8 @@ import androidx.media3.transformer.Transformer;
 import androidx.media3.transformer.VideoEncoderSettings;
 import java.io.File;
 import java.util.Collections;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -39,9 +44,11 @@ public final class VideoProcessor {
     public interface ProgressListener { void onProgress(String stage, int percent); }
 
     public void process(File source, File output, long startMs, long endMs,
-                        boolean stabilize, ProgressListener listener) throws Exception {
+                        boolean stabilize, boolean watermark, ProgressListener listener) throws Exception {
         final float[][] offsets;
         final int bitrate;
+        final WatermarkRenderer.Info watermarkInfo;
+        final int videoWidth;
         try (MediaMetadataRetriever retriever = new MediaMetadataRetriever()) {
             retriever.setDataSource(source.getAbsolutePath());
             String duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
@@ -55,7 +62,14 @@ public final class VideoProcessor {
             String h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
             if (w == null || h == null) throw new IllegalArgumentException("Dimensi video tidak tersedia");
             long pixels = (long) Integer.parseInt(w) * Integer.parseInt(h);
-            bitrate = pixels > 1920L * 1080 ? 25000000 : pixels > 1280L * 720 ? 12000000 : 8000000;
+            videoWidth = Integer.parseInt(w);
+            watermarkInfo = watermark ? WatermarkRenderer.inspect(retriever) : null;
+            String sourceRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE);
+            long originalBitrate = 0;
+            try { if (sourceRate != null) originalBitrate = Long.parseLong(sourceRate); }
+            catch (NumberFormatException ignored) { /* Codec metadata is optional. */ }
+            long floor = pixels > 1920L * 1080 ? 40000000 : pixels > 1280L * 720 ? 20000000 : 12000000;
+            bitrate = (int) Math.min(60000000L, Math.max(floor, originalBitrate * 14 / 10));
             int samples = stabilize ? (int) ((endMs - startMs) / SAMPLE_MS) + 1 : 1;
             float[] x = new float[samples], y = new float[samples];
             int[] previous = null;
@@ -102,10 +116,17 @@ public final class VideoProcessor {
                         .setClippingConfiguration(new MediaItem.ClippingConfiguration.Builder()
                                 .setStartPositionMs(startMs).setEndPositionMs(endMs).build()).build();
                 EditedMediaItem.Builder edited = new EditedMediaItem.Builder(clip);
-                if (stabilize) {
-                    Effect effect = motion;
-                    edited.setEffects(new Effects(Collections.emptyList(), Collections.singletonList(effect)));
+                List<Effect> videoEffects = new ArrayList<>();
+                if (stabilize) videoEffects.add(motion);
+                if (watermark) {
+                    Bitmap badge = WatermarkRenderer.makeBadge(Math.min(800, videoWidth - 24), watermarkInfo);
+                    StaticOverlaySettings location = new StaticOverlaySettings.Builder()
+                            .setBackgroundFrameAnchor(-.94f, -.90f)
+                            .setOverlayFrameAnchor(-1f, -1f).build();
+                    videoEffects.add(new OverlayEffect(Collections.singletonList(
+                            BitmapOverlay.createStaticBitmapOverlay(badge, location))));
                 }
+                if (!videoEffects.isEmpty()) edited.setEffects(new Effects(Collections.emptyList(), videoEffects));
                 EditedMediaItem item = edited.build();
                 Transformer transformer = new Transformer.Builder(context)
                         .setVideoMimeType(MimeTypes.VIDEO_H264)

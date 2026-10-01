@@ -25,3 +25,6 @@ v0.4.1 replaces the blank-on-pause system VideoView with a custom-controlled Med
 
 
 v0.4.2 moves Batal/Selesai to a persistent bottom bar and requests actual frames near the dragged trim handle. Sampling is throttled on-device; decoding responsiveness depends on the source codec and hardware.
+
+
+v0.5.0: fixed bottom export bar, optional translucent provenance watermark on both the JPEG cover and embedded video, stronger multi-region translation analysis, and bitrate requests of up to 60 Mbps (device encoder can fall back). The watermark displays source video frame resolution and UTC recorded timestamp only if found. Standard MP4 metadata frequently does not contain the source camera model, so it is explicitly marked unavailable. "MP frame" is frame pixels, not sensor megapixels. Translucent styling is not a realtime refractive glass/blur filter. Raising encoding bitrate cannot reconstruct details missing from the source; social platforms recompress uploads. No custom NDK .so is included: native decoding/encoding is provided by Android/Media3 and device codecs.

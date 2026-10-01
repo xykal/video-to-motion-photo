@@ -28,3 +28,9 @@ For videos up to 30 seconds, sample 5 frames/s at low resolution, estimate globa
 
 ## Trim before edit (v0.4)
 After file selection, display a dedicated range editor with two handles and a native video preview without stock controls. Permit a 1–30-second interval anywhere in the source. Preserve the precise interval in Media3 clipping before optional stabilization; choose the still cover from the selected interval. Do not claim frame-perfect preview seeking (device decoders may snap to a keyframe).
+
+## Optional provenance watermark v0.5
+Badge defaults off and is stamped on both the still cover and video using the same drawn design. Source camera model is not claimed without verified metadata; source frame dimensions are labeled as such, and recording time is shown in UTC only when a conforming video timestamp exists. No location data is surfaced. Style uses translucent layers and specular trim, not true per-frame refraction. Video must be re-encoded to add the badge.
+
+## Stabilization and quality limits
+Motion estimator uses multiple background regions and median shifts rather than a single global match. It still handles translation only: scene cuts, rolling shutter, motion blur, moving foreground dominance and rotated handheld motion require more research and device testing. Raised requested bitrate preserves detail during re-encoding but cannot create native 4K or recover blocky input. Native JNI/NDK is deliberately deferred until device profiling demonstrates a measurable decoder/estimator bottleneck and introduces maintainable ABI tests.
