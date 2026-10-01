@@ -37,3 +37,6 @@ Motion estimator uses multiple background regions and median shifts rather than 
 
 ## v0.5.1 regression audit
 The cover previously stamped a second badge on a video frame that already contained the overlay. Corrected by extracting the still from the processed clip without another stamp. Read QuickTime make/model and mdta keys only with a size-bounded ISO-BMFF parser; model absent means explicitly unknown. Force SDR tonemapping on export to reduce incompatibility with third-party editors, but TikTok color issues still require a real source and exported sample to confirm. True liquid glass (moving background blur and refraction) is out of scope until a per-frame GPU shader and device-level color/codec tests exist; the existing badge is translucent styling, not glass optics.
+
+## v0.6 experimental backdrop blur
+A custom Media3 GlEffect blurs only the video region beneath the source badge on each frame; still-cover preview blurs the same region locally. The badge overlays camera metadata if present. If GL export fails, retry without watermark, with an explicit result message. Visual alignment, portrait rotation, TikTok filter compatibility and HDR-to-SDR tone mapping remain unverified on real devices. Never claim physical refraction.

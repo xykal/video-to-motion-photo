@@ -138,8 +138,9 @@ public final class MainActivity extends Activity {
             long startMs = clipStartMs, endMs = clipEndMs;
             worker.execute(() -> {
                 try {
-                    convert(input, index, correction, smoothing, stabilizeVideo, addWatermark, startMs, endMs);
-                    postProgress("Selesai. Cek Pictures/MotionPhoto di galeri", 100);
+                    boolean applied = convert(input, index, correction, smoothing, stabilizeVideo, addWatermark, startMs, endMs);
+                    postProgress(applied ? "Selesai. Cek Pictures/MotionPhoto di galeri"
+                            : "Selesai TANPA watermark: efek GPU tidak didukung", 100);
                 } catch (Exception error) {
                     runOnUiThread(() -> { progressMeter.setVisibility(View.GONE); status.setText("Gagal: " + error.getMessage()); });
                 } finally {
@@ -225,7 +226,7 @@ public final class MainActivity extends Activity {
         return frame;
     }
 
-    private void convert(Uri source, int index, boolean correction, boolean smoothing,
+    private boolean convert(Uri source, int index, boolean correction, boolean smoothing,
                          boolean stabilizeVideo, boolean addWatermark, long startMs, long endMs) throws Exception {
         File temp = File.createTempFile("motion_", ".mp4", getCacheDir());
         long declaredSize = -1;
@@ -235,6 +236,7 @@ public final class MainActivity extends Activity {
         final long expectedSize = declaredSize;
         Uri destination = null;
         File processed = null;
+        boolean appliedWatermark = true;
         try {
             long length = 0;
             try (InputStream in = getContentResolver().openInputStream(source);
@@ -253,8 +255,17 @@ public final class MainActivity extends Activity {
             if (endMs <= startMs) throw new IllegalArgumentException("Pilih bagian video untuk dipangkas");
             {
                 processed = new File(getCacheDir(), "processed_" + java.util.UUID.randomUUID() + ".mp4");
-                new VideoProcessor(this).process(temp, processed, startMs, endMs, stabilizeVideo, addWatermark,
-                        (stage, percent) -> postProgress(stage, 10 + percent * 80 / 100));
+                try {
+                    new VideoProcessor(this).process(temp, processed, startMs, endMs, stabilizeVideo, addWatermark,
+                            (stage, percent) -> postProgress(stage, 10 + percent * 80 / 100));
+                } catch (Exception first) {
+                    if (!addWatermark) throw first;
+                    if (!processed.delete() && processed.exists()) throw first;
+                    appliedWatermark = false;
+                    postProgress("Efek kaca gagal; mencoba video tanpa watermark", 20);
+                    new VideoProcessor(this).process(temp, processed, startMs, endMs, stabilizeVideo, false,
+                            (stage, percent) -> postProgress(stage, 20 + percent * 70 / 100));
+                }
                 temp.delete();
                 temp = processed;
                 length = processed.length();
@@ -299,6 +310,7 @@ public final class MainActivity extends Activity {
             ready.put(MediaStore.Images.Media.IS_PENDING, 0);
             if (getContentResolver().update(destination, ready, null, null) != 1) throw new IllegalStateException("Gagal memublikasikan foto");
             destination = null;
+            return appliedWatermark;
         } finally {
             if (destination != null) getContentResolver().delete(destination, null, null);
             if (!temp.delete() && temp.exists()) temp.deleteOnExit();

@@ -4,6 +4,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.Path;
 import android.media.MediaMetadataRetriever;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -62,7 +63,7 @@ public final class WatermarkRenderer {
         RectF frame = new RectF(4, 4, width - 4, height - 4);
         float radius = height * .25f;
         paint.setShadowLayer(8, 0, 5, 0x66000000);
-        paint.setColor(0xb6192024);
+        paint.setColor(0x86192024);
         canvas.drawRoundRect(frame, radius, radius, paint);
         paint.clearShadowLayer();
         paint.setStyle(Paint.Style.STROKE);
@@ -100,8 +101,24 @@ public final class WatermarkRenderer {
         Bitmap badge = makeBadge(Math.min(800, Math.max(290, output.getWidth() - 32)), info);
         Canvas canvas = new Canvas(output);
         float factor = Math.min(1f, (output.getWidth() - 24f) / badge.getWidth());
+        int x = 12, y = Math.max(0, Math.round(output.getHeight() - 12 - badge.getHeight() * factor));
+        int blurWidth = Math.min(output.getWidth() - x, Math.round(badge.getWidth() * factor));
+        int blurHeight = Math.min(output.getHeight() - y, Math.round(badge.getHeight() * factor));
+        if (blurWidth > 16 && blurHeight > 16) {
+            Bitmap region = Bitmap.createBitmap(output, x, y, blurWidth, blurHeight);
+            Bitmap small = Bitmap.createScaledBitmap(region, Math.max(4, blurWidth / 12), Math.max(4, blurHeight / 12), true);
+            Bitmap blurred = Bitmap.createScaledBitmap(small, blurWidth, blurHeight, true);
+            canvas.save();
+            Path rounded = new Path();
+            rounded.addRoundRect(new RectF(x, y, x + blurWidth, y + blurHeight),
+                    blurHeight / 4f, blurHeight / 4f, Path.Direction.CW);
+            canvas.clipPath(rounded);
+            canvas.drawBitmap(blurred, x, y, null);
+            canvas.restore();
+            region.recycle(); small.recycle(); blurred.recycle();
+        }
         canvas.save();
-        canvas.translate(12, output.getHeight() - 12 - badge.getHeight() * factor);
+        canvas.translate(x, y);
         canvas.scale(factor, factor);
         canvas.drawBitmap(badge, 0, 0, null);
         canvas.restore();

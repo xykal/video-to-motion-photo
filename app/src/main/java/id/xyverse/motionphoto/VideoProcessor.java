@@ -126,6 +126,7 @@ public final class VideoProcessor {
                 List<Effect> videoEffects = new ArrayList<>();
                 if (stabilize) videoEffects.add(motion);
                 if (watermark) {
+                    videoEffects.add(new BackdropGlassEffect());
                     Bitmap badge = WatermarkRenderer.makeBadge(Math.min(800, videoWidth - 24), watermarkInfo);
                     StaticOverlaySettings location = new StaticOverlaySettings.Builder()
                             .setBackgroundFrameAnchor(-.94f, -.90f)
