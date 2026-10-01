@@ -1,2 +1,4 @@
 # Motion Photo Studio design
 Warm ivory canvas (#F7F4ED), charcoal typography (#202521), restrained coral action (#D45C4F). Original aperture-and-motion logo in assets/motion-mark.png, generated for this project. Rounded surfaces, compact uppercase step labels, generous spacing. Every screen is a single scrollable column with touch targets at least 46dp. System TextView is used for accessible text rendering; OS default Button styling is not used. No external fonts, icon libraries, image CDNs, or analytics. Dark theme and full screen-reader narration need dedicated device QA.
+
+A dedicated custom-drawn progress meter shows real stage progress; ETA is an approximate extrapolation from elapsed time and stage-weighted progress. No indeterminate spinner pretending to be a completed task.

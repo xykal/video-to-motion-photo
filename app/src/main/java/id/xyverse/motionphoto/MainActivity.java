@@ -2,6 +2,7 @@ package id.xyverse.motionphoto;
 
 import android.app.Activity;
 import android.content.ContentValues;
+import android.database.Cursor;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
@@ -9,8 +10,10 @@ import android.graphics.drawable.GradientDrawable;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
+import android.provider.OpenableColumns;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.ImageView;
@@ -32,6 +35,10 @@ public final class MainActivity extends Activity {
     private static final int INK = 0xff202521, MUTED = 0xff656d67, CREAM = 0xfff7f4ed;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private TextView status, export, enhanceButton, denoiseButton, stabilizeButton;
+    private ProgressMeter progressMeter;
+    private long startedAtMs;
+    private volatile int lastProgressValue = -1;
+    private volatile String lastProgressStage = "";
     private final TextView[] coverButtons = new TextView[3];
     private ImageView preview;
     private Uri selected;
@@ -102,23 +109,31 @@ public final class MainActivity extends Activity {
         export.setOnClickListener(v -> {
             if (selected == null || busy) return;
             busy = true;
+            startedAtMs = SystemClock.elapsedRealtime();
+            lastProgressValue = -1;
+            lastProgressStage = "";
+            progressMeter.setVisibility(View.VISIBLE);
+            progressMeter.setPercent(0);
             export.setAlpha(.55f);
-            status.setText("Sedang memproses, jangan tutup aplikasi…");
+            status.setText("Menyiapkan video…");
             Uri input = selected;
             int index = coverIndex;
             boolean correction = enhance, smoothing = denoise, stabilizeVideo = stabilize;
             worker.execute(() -> {
                 try {
                     convert(input, index, correction, smoothing, stabilizeVideo);
-                    runOnUiThread(() -> status.setText("Berhasil. Cek Pictures/MotionPhoto di galeri."));
+                    postProgress("Selesai. Cek Pictures/MotionPhoto di galeri", 100);
                 } catch (Exception error) {
-                    runOnUiThread(() -> status.setText("Gagal: " + error.getMessage()));
+                    runOnUiThread(() -> { progressMeter.setVisibility(View.GONE); status.setText("Gagal: " + error.getMessage()); });
                 } finally {
                     runOnUiThread(() -> { busy = false; export.setAlpha(1f); });
                 }
             });
         });
         page.addView(export, margin(24, 0));
+        progressMeter = new ProgressMeter(this);
+        progressMeter.setVisibility(View.GONE);
+        page.addView(progressMeter, new LinearLayout.LayoutParams(-1, dp(8)));
         status = text("Pilih MP4 maksimal 300 MB untuk mulai.", 13, MUTED, false);
         page.addView(status, margin(12, 0));
         page.addView(text("Offline • Android 10+ • Powered by " + Brand.NAME, 11, MUTED, false), margin(34, 0));
@@ -170,6 +185,11 @@ public final class MainActivity extends Activity {
 
     private void convert(Uri source, int index, boolean correction, boolean smoothing, boolean stabilizeVideo) throws Exception {
         File temp = File.createTempFile("motion_", ".mp4", getCacheDir());
+        long declaredSize = -1;
+        try (Cursor cursor = getContentResolver().query(source, new String[]{OpenableColumns.SIZE}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) declaredSize = cursor.getLong(0);
+        } catch (RuntimeException ignored) { /* Some document providers omit size; stream limit still applies. */ }
+        final long expectedSize = declaredSize;
         Uri destination = null;
         File processed = null;
         try {
@@ -183,17 +203,20 @@ public final class MainActivity extends Activity {
                     length += count;
                     if (length > MAX_BYTES) throw new IllegalArgumentException("Video melebihi 300 MB");
                     out.write(buffer, 0, count);
+                    if (expectedSize > 0) postProgress("Menyalin video", (int) Math.min(10, length * 10 / expectedSize));
                 }
             }
+            postProgress("Video siap", 10);
             if (stabilizeVideo) {
                 processed = new File(getCacheDir(), "processed_" + java.util.UUID.randomUUID() + ".mp4");
-                runOnUiThread(() -> status.setText("Menganalisis guncangan & mengode ulang video…"));
-                new VideoProcessor(this).stabilize(temp, processed);
+                new VideoProcessor(this).stabilize(temp, processed,
+                        (stage, percent) -> postProgress(stage, 10 + percent * 80 / 100));
                 temp.delete();
                 temp = processed;
                 length = processed.length();
                 processed = null;
             }
+            postProgress("Menyiapkan foto sampul", 90);
             byte[] jpeg;
             try (MediaMetadataRetriever retriever = new MediaMetadataRetriever()) {
                 retriever.setDataSource(temp.getAbsolutePath());
@@ -216,11 +239,14 @@ public final class MainActivity extends Activity {
             values.put(MediaStore.Images.Media.IS_PENDING, 1);
             destination = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
             if (destination == null) throw new IllegalStateException("Tidak bisa membuat foto di galeri");
+            postProgress("Menyimpan Motion Photo", 92);
+            final long outputLength = length;
             try (InputStream video = new FileInputStream(temp);
                  ParcelFileDescriptor fd = getContentResolver().openFileDescriptor(destination, "w")) {
                 if (fd == null) throw new IllegalStateException("Tidak bisa menulis foto");
                 try (OutputStream output = new FileOutputStream(fd.getFileDescriptor())) {
-                    MotionPhotoWriter.write(jpeg, video, length, output);
+                    MotionPhotoWriter.write(jpeg, video, outputLength, output,
+                            copied -> postProgress("Menyimpan Motion Photo", 92 + (int) (copied * 7 / outputLength)));
                     output.flush();
                 }
             }
@@ -233,6 +259,25 @@ public final class MainActivity extends Activity {
             if (!temp.delete() && temp.exists()) temp.deleteOnExit();
             if (processed != null && processed.exists()) processed.delete();
         }
+    }
+
+    private void postProgress(String stage, int value) {
+        int bounded = Math.max(0, Math.min(100, value));
+        if (bounded == lastProgressValue && stage.equals(lastProgressStage)) return;
+        lastProgressValue = bounded;
+        lastProgressStage = stage;
+        runOnUiThread(() -> {
+            if (isDestroyed()) return;
+            int percent = bounded;
+            progressMeter.setPercent(percent);
+            String eta = "perkiraan belum tersedia";
+            if (percent >= 5 && percent < 100) {
+                long elapsed = Math.max(1, SystemClock.elapsedRealtime() - startedAtMs);
+                long remainingSeconds = Math.min(3600, elapsed * (100 - percent) / percent / 1000);
+                eta = "perkiraan ±" + (remainingSeconds < 60 ? remainingSeconds + " detik" : (remainingSeconds / 60 + 1) + " menit");
+            }
+            status.setText(stage + " · " + percent + "%" + (percent < 100 ? " · " + eta : ""));
+        });
     }
 
     private void refreshStyles() {

@@ -18,6 +18,7 @@ import androidx.media3.transformer.EditedMediaItem;
 import androidx.media3.transformer.Effects;
 import androidx.media3.transformer.ExportException;
 import androidx.media3.transformer.ExportResult;
+import androidx.media3.transformer.ProgressHolder;
 import androidx.media3.transformer.Transformer;
 import androidx.media3.transformer.VideoEncoderSettings;
 import java.io.File;
@@ -25,6 +26,7 @@ import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @UnstableApi
 public final class VideoProcessor {
@@ -34,7 +36,9 @@ public final class VideoProcessor {
 
     public VideoProcessor(Context context) { this.context = context.getApplicationContext(); }
 
-    public void stabilize(File source, File output) throws Exception {
+    public interface ProgressListener { void onProgress(String stage, int percent); }
+
+    public void stabilize(File source, File output, ProgressListener listener) throws Exception {
         final float[][] offsets;
         final int bitrate;
         try (MediaMetadataRetriever retriever = new MediaMetadataRetriever()) {
@@ -69,6 +73,7 @@ public final class VideoProcessor {
                     y[i] = y[i - 1] + shift[1];
                 }
                 previous = current;
+                listener.onProgress("Analisis guncangan", (i + 1) * 30 / samples);
             }
             offsets = MotionEstimator.corrections(x, y, 5);
         }
@@ -86,7 +91,10 @@ public final class VideoProcessor {
         };
         CountDownLatch completed = new CountDownLatch(1);
         AtomicReference<Exception> failure = new AtomicReference<>();
-        new Handler(Looper.getMainLooper()).post(() -> {
+        AtomicBoolean active = new AtomicBoolean(true);
+        Handler main = new Handler(Looper.getMainLooper());
+        AtomicReference<Transformer> currentTransformer = new AtomicReference<>();
+        main.post(() -> {
             try {
                 Effect effect = motion;
                 EditedMediaItem item = new EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(source)))
@@ -96,15 +104,33 @@ public final class VideoProcessor {
                         .setEncoderFactory(new DefaultEncoderFactory.Builder(context)
                                 .setRequestedVideoEncoderSettings(new VideoEncoderSettings.Builder().setBitrate(bitrate).build()).build())
                         .addListener(new Transformer.Listener() {
-                            @Override public void onCompleted(Composition composition, ExportResult result) { completed.countDown(); }
+                            @Override public void onCompleted(Composition composition, ExportResult result) {
+                                active.set(false); listener.onProgress("Menyelesaikan video", 100); completed.countDown();
+                            }
                             @Override public void onError(Composition composition, ExportResult result, ExportException error) {
-                                failure.set(error); completed.countDown();
+                                active.set(false); failure.set(error); completed.countDown();
                             }
                         }).build();
+                currentTransformer.set(transformer);
                 transformer.start(item, output.getAbsolutePath());
-            } catch (Exception error) { failure.set(error); completed.countDown(); }
+                ProgressHolder holder = new ProgressHolder();
+                Runnable poll = new Runnable() {
+                    @Override public void run() {
+                        if (!active.get()) return;
+                        if (transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
+                            listener.onProgress("Mengode ulang video", 30 + holder.progress * 70 / 100);
+                        }
+                        main.postDelayed(this, 500);
+                    }
+                };
+                main.post(poll);
+            } catch (Exception error) { active.set(false); failure.set(error); completed.countDown(); }
         });
-        if (!completed.await(8, TimeUnit.MINUTES)) throw new IllegalStateException("Pemrosesan terlalu lama. Coba video lebih pendek");
+        if (!completed.await(8, TimeUnit.MINUTES)) {
+            active.set(false);
+            main.post(() -> { Transformer running = currentTransformer.get(); if (running != null) running.cancel(); });
+            throw new IllegalStateException("Pemrosesan terlalu lama. Coba video lebih pendek");
+        }
         if (failure.get() != null) throw failure.get();
         if (!output.isFile() || output.length() < 12) throw new IllegalStateException("Video hasil kosong");
     }

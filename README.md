@@ -15,3 +15,6 @@ Native Android app that extracts a middle frame from an MP4 and packages the JPE
 Open in Android Studio with JDK 17. Signing secrets must be stored in GitHub Secrets, never in the repository. Experimental offline translation-only video stabilization is enabled by default for videos up to 30 seconds, with H.264 re-encoding at a higher requested bitrate. Color/noise adjustments affect the cover only. This does not restore detail missing from low-quality sources or prevent TikTok recompression. Device testing is required.
 
 Built by xykal — XyVerse Technology Global
+
+### Build notes / Catatan build
+Release v0.3.1 enables R8 code shrinking, optimization and resource shrinking. Export progress shows the current phase and percentage; remaining time is an estimate, not a deadline. Installing an older draft over a newer one may be blocked by Android versionCode rules.

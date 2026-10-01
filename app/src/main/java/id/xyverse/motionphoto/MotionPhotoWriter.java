@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.function.LongConsumer;
 
 /** Writes a JPEG APP1 XMP packet and appends an unmodified MP4 at EOF. */
 public final class MotionPhotoWriter {
@@ -13,6 +14,11 @@ public final class MotionPhotoWriter {
     private MotionPhotoWriter() {}
 
     public static void write(byte[] jpeg, InputStream mp4, long mp4Length, OutputStream out) throws IOException {
+        write(jpeg, mp4, mp4Length, out, bytes -> {});
+    }
+
+    public static void write(byte[] jpeg, InputStream mp4, long mp4Length, OutputStream out,
+                             LongConsumer copiedBytes) throws IOException {
         if (jpeg.length < 4 || (jpeg[0] & 255) != 255 || (jpeg[1] & 255) != 216 ||
                 (jpeg[jpeg.length - 2] & 255) != 255 || (jpeg[jpeg.length - 1] & 255) != 217) {
             throw new IOException("JPEG tidak valid");
@@ -46,6 +52,7 @@ public final class MotionPhotoWriter {
         packet.writeTo(out);
         out.write(jpeg, 2, jpeg.length - 2);
         out.write(head);
+        copiedBytes.accept(head.length);
         long remaining = mp4Length - head.length;
         byte[] buffer = new byte[65536];
         while (remaining > 0) {
@@ -53,6 +60,7 @@ public final class MotionPhotoWriter {
             if (count < 0) throw new IOException("MP4 terpotong saat disalin");
             out.write(buffer, 0, count);
             remaining -= count;
+            copiedBytes.accept(mp4Length - remaining);
         }
     }
 
