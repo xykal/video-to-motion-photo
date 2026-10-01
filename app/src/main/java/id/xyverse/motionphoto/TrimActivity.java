@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -23,13 +24,16 @@ import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 public final class TrimActivity extends Activity {
     private static final int INK = 0xff202521, CREAM = 0xfff7f4ed;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final ExecutorService previewWorker = Executors.newSingleThreadExecutor();
+    private final ThreadPoolExecutor previewWorker = new ThreadPoolExecutor(1, 1, 0,
+            TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
+    private long lastStillAt;
     private ExoPlayer player;
     private ImageView thumbnail;
     private TrimRangeView range;
@@ -56,17 +60,17 @@ public final class TrimActivity extends Activity {
         getWindow().setStatusBarColor(CREAM);
         getWindow().setNavigationBarColor(CREAM);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setBackgroundColor(CREAM);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(CREAM);
+        screen.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(24), dp(28), dp(24), dp(34));
         scroll.addView(root);
-        TextView cancel = button("Batal", false, R.drawable.ic_close);
-        cancel.setOnClickListener(v -> { setResult(RESULT_CANCELED); finish(); });
-        root.addView(cancel, new LinearLayout.LayoutParams(-1, dp(50)));
-        root.addView(text("Pilih bagian terbaik", 28, INK, true), margin(22));
+        root.addView(text("Pangkas videomu", 28, INK, true), margin(8));
         root.addView(text("Geser ujung garis. Potongan 1–30 detik bisa diambil dari bagian mana pun.", 14, 0xff656d67, false), margin(8));
         FrameLayout previewFrame = new FrameLayout(this);
         GradientDrawable surface = new GradientDrawable();
@@ -94,6 +98,7 @@ public final class TrimActivity extends Activity {
                 setIcon(play, R.drawable.ic_play, INK);
                 showStill(player.getCurrentPosition());
             } else {
+                thumbnailGeneration++;
                 player.seekTo(range.getStartMs());
                 player.play();
                 play.setText("Jeda potongan");
@@ -106,19 +111,26 @@ public final class TrimActivity extends Activity {
         times = text("Membaca durasi…", 16, INK, true);
         root.addView(times, margin(20));
         range = new TrimRangeView(this);
-        range.setListener((start, end) -> {
-            times.setText(TrimRangeView.format(start) + "  —  " + TrimRangeView.format(end)
-                    + "    ·    " + TrimRangeView.format(end - start));
-            if (ready) {
-                if (player != null) { player.pause(); player.seekTo(start); }
-                play.setText("Putar potongan");
-                setIcon(play, R.drawable.ic_play, INK);
-                scheduleStill(start);
+        range.setListener((start, end, previewMs, finished) -> {
+            times.setText("MULAI " + TrimRangeView.format(start) + "   ·   AKHIR " + TrimRangeView.format(end)
+                    + "   ·   DURASI " + TrimRangeView.format(end - start));
+            if (!ready) return;
+            if (player != null) {
+                player.pause();
+                if (finished) player.seekTo(start);
+            }
+            play.setText("Putar potongan");
+            setIcon(play, R.drawable.ic_play, INK);
+            previewStatus.setText("Memuat frame " + TrimRangeView.format(previewMs) + "…");
+            previewStatus.setVisibility(View.VISIBLE);
+            if (finished || SystemClock.uptimeMillis() - lastStillAt > 140) {
+                lastStillAt = SystemClock.uptimeMillis();
+                showStill(previewMs);
             }
         });
         root.addView(range, margin(6));
         root.addView(text("Pratinjau dapat bergeser ke frame kunci; hasil ekspor memakai rentang yang dipilih.", 12, 0xff656d67, false), margin(6));
-        finishButton = button("Selesai, pakai potongan ini", true, R.drawable.ic_done);
+        finishButton = button("Selesai · pakai ini", true, R.drawable.ic_done);
         finishButton.setEnabled(false);
         finishButton.setAlpha(.45f);
         finishButton.setOnClickListener(v -> {
@@ -129,8 +141,18 @@ public final class TrimActivity extends Activity {
             setResult(RESULT_OK, result);
             finish();
         });
-        root.addView(finishButton, margin(22));
-        setContentView(scroll);
+        root.addView(text("Powered by " + Brand.NAME, 11, 0xff656d67, false), margin(18));
+        LinearLayout footer = new LinearLayout(this);
+        footer.setPadding(dp(24), dp(10), dp(24), dp(16));
+        footer.setBackgroundColor(CREAM);
+        TextView cancel = button("Batal", false, R.drawable.ic_close);
+        cancel.setOnClickListener(v -> { setResult(RESULT_CANCELED); finish(); });
+        LinearLayout.LayoutParams cancelWidth = new LinearLayout.LayoutParams(0, dp(58), 1);
+        cancelWidth.rightMargin = dp(8);
+        footer.addView(cancel, cancelWidth);
+        footer.addView(finishButton, new LinearLayout.LayoutParams(0, dp(58), 2));
+        screen.addView(footer, new LinearLayout.LayoutParams(-1, -2));
+        setContentView(screen);
         player = new ExoPlayer.Builder(this).build();
         playerView.setPlayer(player);
         player.addListener(new Player.Listener() {
@@ -182,14 +204,17 @@ public final class TrimActivity extends Activity {
     }
     private void showStill(long positionMs) {
         int generation = ++thumbnailGeneration;
+        if (ready) previewWorker.getQueue().clear();
         previewWorker.execute(() -> {
             try (MediaMetadataRetriever retriever = new MediaMetadataRetriever()) {
                 retriever.setDataSource(this, source);
                 Bitmap frame = retriever.getScaledFrameAtTime(Math.max(0, positionMs) * 1000,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 800, 800);
+                        MediaMetadataRetriever.OPTION_CLOSEST, 480, 480);
                 if (frame == null) throw new IllegalStateException("Frame tidak tersedia");
                 runOnUiThread(() -> {
-                    if (generation != thumbnailGeneration || isDestroyed()) { frame.recycle(); return; }
+                    if (generation != thumbnailGeneration || isDestroyed() || (player != null && player.isPlaying())) {
+                        frame.recycle(); return;
+                    }
                     thumbnail.setImageBitmap(frame);
                     thumbnail.setVisibility(View.VISIBLE);
                     if (canPlay) previewStatus.setVisibility(View.GONE);

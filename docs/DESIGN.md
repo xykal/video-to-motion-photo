@@ -4,3 +4,6 @@ Warm ivory canvas (#F7F4ED), charcoal typography (#202521), restrained coral act
 A dedicated custom-drawn progress meter shows real stage progress; ETA is an approximate extrapolation from elapsed time and stage-weighted progress. No indeterminate spinner pretending to be a completed task.
 
 Trim preview uses Media3 ExoPlayer with an explicit texture-backed surface and an extracted still frame overlay, avoiding the blank paused VideoView surface. Custom aperture-inspired vector icons for select, motion, cut, play, pause, cancel, and confirm live under app/src/main/res/drawable. The trim screen exposes unambiguous cancel and finish actions.
+
+
+Trim regression fix: the confirm/cancel bar is outside the scrolling content and visible at all times. Dragging a range handle updates the displayed timestamp and a nearby decoded video frame; seeking the player on every drag event was removed to avoid buffering/freezes.

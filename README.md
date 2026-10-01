@@ -22,3 +22,6 @@ Release v0.3.1 enables R8 code shrinking, optimization and resource shrinking. E
 Version 0.4.0 adds a trim screen before editing. The selected interval, not the full source, is transformed and embedded in the Motion Photo. Imported source files still have a 300 MB read limit.
 
 v0.4.1 replaces the blank-on-pause system VideoView with a custom-controlled Media3 player and extracted cover preview. The trim screen has explicit **Batal** and **Selesai, pakai potongan ini** actions. If the device cannot decode a video, the app reports it rather than silently showing an empty preview. The app source is Java; Android/Media3 and device video codecs are external components, not handwritten C modules in this repository.
+
+
+v0.4.2 moves Batal/Selesai to a persistent bottom bar and requests actual frames near the dragged trim handle. Sampling is throttled on-device; decoding responsiveness depends on the source codec and hardware.
