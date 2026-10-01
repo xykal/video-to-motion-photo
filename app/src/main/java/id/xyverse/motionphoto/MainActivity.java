@@ -112,10 +112,10 @@ public final class MainActivity extends Activity {
         page.addView(stabilizeButton, margin(0, 8));
         page.addView(text("Stabilisasi translasi offline; crop tepi dan video di-encode ulang. Ini tidak memulihkan blur atau resolusi yang hilang.", 12, MUTED, false), margin(10, 0));
         page.addView(text("04  TANDA ASAL · OPSIONAL", 12, MUTED, true), margin(24, 12));
-        watermarkButton = action("Watermark kaca · mati", false);
+        watermarkButton = action("Tanda asal transparan · mati", false);
         watermarkButton.setOnClickListener(v -> { watermark = !watermark; refreshStyles(); showPreview(); });
         page.addView(watermarkButton, margin(0, 8));
-        page.addView(text("Tampil di foto dan video. Kamera asal & waktu rekam hanya ditulis bila data sumber tersedia; MP berarti resolusi frame, bukan sensor.", 12, MUTED, false), margin(8, 0));
+        page.addView(text("Tampil di foto dan video. Kamera asal hanya jika ada di metadata MP4; tidak semua HP menyimpannya. MP berarti resolusi frame, bukan sensor.", 12, MUTED, false), margin(8, 0));
         LinearLayout footer = new LinearLayout(this);
         footer.setOrientation(LinearLayout.VERTICAL);
         footer.setPadding(dp(24), dp(10), dp(24), dp(20));
@@ -200,7 +200,7 @@ public final class MainActivity extends Activity {
                 Bitmap adjusted = CoverProcessor.process(frame, correction, smoothing);
                 if (adjusted != frame) frame.recycle();
                 Bitmap result = showWatermark
-                        ? WatermarkRenderer.stampCover(adjusted, WatermarkRenderer.inspect(retriever)) : adjusted;
+                        ? WatermarkRenderer.stampCover(adjusted, WatermarkRenderer.inspect(retriever, "cek saat ekspor")) : adjusted;
                 if (result != adjusted) adjusted.recycle();
                 runOnUiThread(() -> {
                     if (generation == previewGeneration && !isDestroyed()) preview.setImageBitmap(result);
@@ -251,13 +251,6 @@ public final class MainActivity extends Activity {
             }
             postProgress("Video siap", 10);
             if (endMs <= startMs) throw new IllegalArgumentException("Pilih bagian video untuk dipangkas");
-            WatermarkRenderer.Info sourceInfo = null;
-            if (addWatermark) {
-                try (MediaMetadataRetriever sourceRetriever = new MediaMetadataRetriever()) {
-                    sourceRetriever.setDataSource(temp.getAbsolutePath());
-                    sourceInfo = WatermarkRenderer.inspect(sourceRetriever);
-                }
-            }
             {
                 processed = new File(getCacheDir(), "processed_" + java.util.UUID.randomUUID() + ".mp4");
                 new VideoProcessor(this).process(temp, processed, startMs, endMs, stabilizeVideo, addWatermark,
@@ -276,11 +269,7 @@ public final class MainActivity extends Activity {
                 Bitmap frame = getCover(retriever, index, 0, 0);
                 Bitmap adjusted = CoverProcessor.process(frame, correction, smoothing);
                 if (adjusted != frame) frame.recycle();
-                if (addWatermark) {
-                    Bitmap decorated = WatermarkRenderer.stampCover(adjusted, sourceInfo);
-                    adjusted.recycle();
-                    adjusted = decorated;
-                }
+                // The processed video frame already contains its watermark. Never stamp twice.
                 try (ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
                     try {
                         if (!adjusted.compress(Bitmap.CompressFormat.JPEG, 90, bytes)) throw new IllegalStateException("Gagal mengode JPEG");
@@ -346,7 +335,7 @@ public final class MainActivity extends Activity {
         stabilizeButton.setText(stabilize ? "Stabilkan video · aktif" : "Stabilkan video · nonaktif");
         stabilizeButton.setBackground(shape(stabilize ? INK : Color.WHITE, 14, 0xffe4e4dd));
         stabilizeButton.setTextColor(stabilize ? Color.WHITE : INK);
-        watermarkButton.setText(watermark ? "Watermark kaca · aktif" : "Watermark kaca · mati");
+        watermarkButton.setText(watermark ? "Tanda asal transparan · aktif" : "Tanda asal transparan · mati");
         watermarkButton.setBackground(shape(watermark ? INK : Color.WHITE, 14, 0xffe4e4dd));
         watermarkButton.setTextColor(watermark ? Color.WHITE : INK);
     }

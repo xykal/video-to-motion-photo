@@ -13,10 +13,12 @@ import java.util.Locale;
 /** Draws a translucent editorial badge; not a realtime background blur/refraction. */
 public final class WatermarkRenderer {
     public static final class Info {
+        public final String camera;
         public final String resolution;
         public final String frameMegapixels;
         public final String recordedAt;
-        public Info(String resolution, String frameMegapixels, String recordedAt) {
+        public Info(String camera, String resolution, String frameMegapixels, String recordedAt) {
+            this.camera = camera == null ? "tidak terdata" : camera;
             this.resolution = resolution;
             this.frameMegapixels = frameMegapixels;
             this.recordedAt = recordedAt;
@@ -24,7 +26,7 @@ public final class WatermarkRenderer {
     }
     private WatermarkRenderer() {}
 
-    public static Info inspect(MediaMetadataRetriever retriever) {
+    public static Info inspect(MediaMetadataRetriever retriever, String camera) {
         int width = parse(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
         int height = parse(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
         int rotation = parse(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION));
@@ -43,7 +45,7 @@ public final class WatermarkRenderer {
                         .withZone(ZoneOffset.UTC).format(Instant.parse(iso));
             } catch (Exception ignored) { /* No verifiable original recording time. */ }
         }
-        return new Info(dimensions, megapixels, date);
+        return new Info(camera, dimensions, megapixels, date);
     }
 
     private static int parse(String input) {
@@ -60,27 +62,31 @@ public final class WatermarkRenderer {
         RectF frame = new RectF(4, 4, width - 4, height - 4);
         float radius = height * .25f;
         paint.setShadowLayer(8, 0, 5, 0x66000000);
-        paint.setColor(0xcbe8edf0);
+        paint.setColor(0xb6192024);
         canvas.drawRoundRect(frame, radius, radius, paint);
         paint.clearShadowLayer();
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(2);
-        paint.setColor(0xccffffff);
+        paint.setColor(0x99ffffff);
         canvas.drawRoundRect(frame, radius, radius, paint);
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(0x88ffffff);
+        paint.setColor(0x66ffffff);
         canvas.drawRoundRect(new RectF(18, 12, width - 18, 17), 3, 3, paint);
         float scale = width / 800f;
         paint.setColor(0xffd45c4f);
         canvas.drawCircle(42 * scale, 47 * scale, 16 * scale, paint);
-        paint.setColor(0xff202521);
+        paint.setColor(0xffffffff);
         paint.setTextSize(27 * scale);
         paint.setFakeBoldText(true);
         canvas.drawText("MOTION  /  ORIGINAL", 72 * scale, 54 * scale, paint);
         paint.setFakeBoldText(false);
         paint.setTextSize(24 * scale);
-        canvas.drawText("Kamera asal: tidak terdata", 32 * scale, 100 * scale, paint);
-        paint.setColor(0xff54605c);
+        String camera = "Kamera asal: " + info.camera;
+        while (paint.measureText(camera) > width - 64 * scale && camera.length() > 18) {
+            camera = camera.substring(0, camera.length() - 2) + "…";
+        }
+        canvas.drawText(camera, 32 * scale, 100 * scale, paint);
+        paint.setColor(0xffdae2e1);
         paint.setTextSize(21 * scale);
         String details = info.resolution + "  ·  " + info.frameMegapixels;
         canvas.drawText(details, 32 * scale, 137 * scale, paint);

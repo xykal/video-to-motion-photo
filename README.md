@@ -28,3 +28,6 @@ v0.4.2 moves Batal/Selesai to a persistent bottom bar and requests actual frames
 
 
 v0.5.0: fixed bottom export bar, optional translucent provenance watermark on both the JPEG cover and embedded video, stronger multi-region translation analysis, and bitrate requests of up to 60 Mbps (device encoder can fall back). The watermark displays source video frame resolution and UTC recorded timestamp only if found. Standard MP4 metadata frequently does not contain the source camera model, so it is explicitly marked unavailable. "MP frame" is frame pixels, not sensor megapixels. Translucent styling is not a realtime refractive glass/blur filter. Raising encoding bitrate cannot reconstruct details missing from the source; social platforms recompress uploads. No custom NDK .so is included: native decoding/encoding is provided by Android/Media3 and device codecs.
+
+
+v0.5.1 fixes double watermark on the still (the still is extracted from the already-watermarked output), reads a bounded subset of QuickTime/MP4 make/model metadata if present, and requests OpenGL HDR-to-SDR tone mapping for compatibility. TikTok filter output is not yet validated without a reproducing clip. The current translucent badge is NOT a real per-frame refractive/backdrop blur; that requires a separately tested GL effect and should not be sold as finished.

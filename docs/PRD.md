@@ -34,3 +34,6 @@ Badge defaults off and is stamped on both the still cover and video using the sa
 
 ## Stabilization and quality limits
 Motion estimator uses multiple background regions and median shifts rather than a single global match. It still handles translation only: scene cuts, rolling shutter, motion blur, moving foreground dominance and rotated handheld motion require more research and device testing. Raised requested bitrate preserves detail during re-encoding but cannot create native 4K or recover blocky input. Native JNI/NDK is deliberately deferred until device profiling demonstrates a measurable decoder/estimator bottleneck and introduces maintainable ABI tests.
+
+## v0.5.1 regression audit
+The cover previously stamped a second badge on a video frame that already contained the overlay. Corrected by extracting the still from the processed clip without another stamp. Read QuickTime make/model and mdta keys only with a size-bounded ISO-BMFF parser; model absent means explicitly unknown. Force SDR tonemapping on export to reduce incompatibility with third-party editors, but TikTok color issues still require a real source and exported sample to confirm. True liquid glass (moving background blur and refraction) is out of scope until a per-frame GPU shader and device-level color/codec tests exist; the existing badge is translucent styling, not glass optics.

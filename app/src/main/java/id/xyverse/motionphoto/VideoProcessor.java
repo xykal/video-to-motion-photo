@@ -18,6 +18,7 @@ import androidx.media3.effect.StaticOverlaySettings;
 import androidx.media3.transformer.Composition;
 import androidx.media3.transformer.DefaultEncoderFactory;
 import androidx.media3.transformer.EditedMediaItem;
+import androidx.media3.transformer.EditedMediaItemSequence;
 import androidx.media3.transformer.Effects;
 import androidx.media3.transformer.ExportException;
 import androidx.media3.transformer.ExportResult;
@@ -63,7 +64,13 @@ public final class VideoProcessor {
             if (w == null || h == null) throw new IllegalArgumentException("Dimensi video tidak tersedia");
             long pixels = (long) Integer.parseInt(w) * Integer.parseInt(h);
             videoWidth = Integer.parseInt(w);
-            watermarkInfo = watermark ? WatermarkRenderer.inspect(retriever) : null;
+            String camera = null;
+            if (watermark) {
+                try (java.io.RandomAccessFile original = new java.io.RandomAccessFile(source, "r")) {
+                    camera = CameraMetadataReader.readCamera(original);
+                } catch (java.io.IOException ignored) { /* Unsupported/corrupt metadata is not a camera identity. */ }
+            }
+            watermarkInfo = watermark ? WatermarkRenderer.inspect(retriever, camera) : null;
             String sourceRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE);
             long originalBitrate = 0;
             try { if (sourceRate != null) originalBitrate = Long.parseLong(sourceRate); }
@@ -128,6 +135,10 @@ public final class VideoProcessor {
                 }
                 if (!videoEffects.isEmpty()) edited.setEffects(new Effects(Collections.emptyList(), videoEffects));
                 EditedMediaItem item = edited.build();
+                Composition composition = new Composition.Builder(Collections.singletonList(
+                        EditedMediaItemSequence.withAudioAndVideoFrom(Collections.singletonList(item))))
+                        .setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)
+                        .setTransmuxVideo(false).build();
                 Transformer transformer = new Transformer.Builder(context)
                         .setVideoMimeType(MimeTypes.VIDEO_H264)
                         .setEncoderFactory(new DefaultEncoderFactory.Builder(context)
@@ -141,7 +152,7 @@ public final class VideoProcessor {
                             }
                         }).build();
                 currentTransformer.set(transformer);
-                transformer.start(item, output.getAbsolutePath());
+                transformer.start(composition, output.getAbsolutePath());
                 ProgressHolder holder = new ProgressHolder();
                 Runnable poll = new Runnable() {
                     @Override public void run() {
