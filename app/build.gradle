@@ -7,8 +7,8 @@ android {
         applicationId 'id.xyverse.motionphoto'
         minSdk 29
         targetSdk 35
-        versionCode 5
-        versionName '0.4.0'
+        versionCode 6
+        versionName '0.4.1'
     }
     signingConfigs {
         release {
@@ -35,5 +35,7 @@ android {
  dependencies {
     implementation 'androidx.media3:media3-transformer:1.9.4'
     implementation 'androidx.media3:media3-effect:1.9.4'
+    implementation 'androidx.media3:media3-exoplayer:1.9.4'
+    implementation 'androidx.media3:media3-ui:1.9.4'
     testImplementation 'junit:junit:4.13.2'
 }

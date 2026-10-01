@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.Drawable;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Bundle;
@@ -72,7 +73,8 @@ public final class MainActivity extends Activity {
         preview.setBackground(shape(0xffe8e4da, 22, 0));
         preview.setContentDescription("Pratinjau frame sampul video");
         page.addView(preview, new LinearLayout.LayoutParams(-1, dp(206)));
-        TextView pick = action("Pilih video MP4  ↗", false);
+        TextView pick = action("Pilih video MP4", false);
+        setIcon(pick, R.drawable.ic_select, INK);
         pick.setOnClickListener(v -> {
             if (busy) return;
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -106,7 +108,8 @@ public final class MainActivity extends Activity {
         stabilizeButton.setOnClickListener(v -> { stabilize = !stabilize; refreshStyles(); });
         page.addView(stabilizeButton, margin(0, 8));
         page.addView(text("Stabilisasi translasi offline, durasi maks. 30 detik. Crop tepi 8% dan encode H.264 bitrate tinggi. Koreksi warna/noise hanya pada sampul; sumber buram tidak bisa dipulihkan.", 12, MUTED, false), margin(10, 0));
-        export = action("Buat Motion Photo  →", true);
+        export = action("Buat Motion Photo", true);
+        setIcon(export, R.drawable.ic_motion, Color.WHITE);
         export.setOnClickListener(v -> {
             if (selected == null || busy) return;
             busy = true;
@@ -322,6 +325,12 @@ public final class MainActivity extends Activity {
         view.setClickable(true);
         view.setFocusable(true);
         return view;
+    }
+    private void setIcon(TextView view, int iconId, int tint) {
+        Drawable icon = getDrawable(iconId).mutate();
+        icon.setTint(tint);
+        view.setCompoundDrawablesWithIntrinsicBounds(icon, null, null, null);
+        view.setCompoundDrawablePadding(dp(8));
     }
     private TextView text(String value, int size, int color, boolean bold) {
         TextView view = new TextView(this);
