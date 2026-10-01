@@ -18,7 +18,6 @@ import androidx.media3.transformer.EditedMediaItem;
 import androidx.media3.transformer.Effects;
 import androidx.media3.transformer.ExportException;
 import androidx.media3.transformer.ExportResult;
-import androidx.media3.transformer.TransformationRequest;
 import androidx.media3.transformer.Transformer;
 import androidx.media3.transformer.VideoEncoderSettings;
 import java.io.File;
@@ -93,7 +92,7 @@ public final class VideoProcessor {
                 EditedMediaItem item = new EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(source)))
                         .setEffects(new Effects(Collections.emptyList(), Collections.singletonList(effect))).build();
                 Transformer transformer = new Transformer.Builder(context)
-                        .setTransformationRequest(new TransformationRequest.Builder().setVideoMimeType(MimeTypes.VIDEO_H264).build())
+                        .setVideoMimeType(MimeTypes.VIDEO_H264)
                         .setEncoderFactory(new DefaultEncoderFactory.Builder(context)
                                 .setRequestedVideoEncoderSettings(new VideoEncoderSettings.Builder().setBitrate(bitrate).build()).build())
                         .addListener(new Transformer.Listener() {
