@@ -27,6 +27,8 @@ jobs:
         with:
           gradle-version: '8.9'
           cache-disabled: true
+      - name: Check README integrity
+        run: python3 scripts/check_readme.py
       - name: Compile debug APK
         if: ${{ !inputs.release }}
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug

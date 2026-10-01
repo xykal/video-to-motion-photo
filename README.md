@@ -1,68 +1,43 @@
-name: Android
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      release:
-        description: 'Build a signed APK and create a draft release'
-        type: boolean
-        required: true
-        default: false
-permissions:
-  contents: read
-jobs:
-  android:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-          cache-disabled: true
-      - name: Compile debug APK
-        if: ${{ !inputs.release }}
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
-      - name: Verify signing configuration
-        if: ${{ inputs.release }}
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          test -n "$KEYSTORE_B64" && test -n "$ANDROID_KEYSTORE_PASSWORD" && test -n "$ANDROID_KEY_ALIAS" && test -n "$ANDROID_KEY_PASSWORD" || { echo 'Signing secrets missing'; exit 1; }
-          umask 077
-          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
-          echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
-          echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-          echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
-          echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
-      - name: Build signed APK and draft release
-        if: ${{ inputs.release }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
-          SIGNER=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)
-          test -n "$SIGNER"
-          "$SIGNER" verify --verbose app/build/outputs/apk/release/app-release.apk
-          APK=app/build/outputs/apk/release/app-release.apk
-          test -s "$APK"
-          test -f "$ANDROID_KEYSTORE_FILE"
-          TAG="v0.6.0-build.${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" "$APK#video-to-motion-photo-${TAG}.apk" --draft --title "$TAG" --notes 'Signed draft APK. Gallery compatibility requires physical-device testing.' --target "$GITHUB_SHA"
-      - name: Delete transient keystore
-        if: always()
-        run: |
-          if [ -n "${ANDROID_KEYSTORE_FILE:-}" ]; then rm -f -- "$ANDROID_KEYSTORE_FILE"; fi
+# Motion Photo Studio
 
+![Logo Motion Photo Studio](assets/motion-mark-small.png)
 
-v0.6.0 experimental liquid-glass effect: a video GPU shader blurs the actual pixels behind the lower-left metadata badge on each frame. The cover preview uses a localized bitmap blur. If video GPU processing fails, the app retries the conversion without any watermark and reports this explicitly. The effect still needs on-device color and visual QA; "liquid glass" describes a blur/highlight look, not physical lens refraction.
+Aplikasi Android native untuk mengubah potongan video MP4 menjadi **Motion Photo**: satu berkas JPEG dengan klip MP4 tertanam. Diproses di perangkat, tanpa unggah video ke server.
+
+**[Unduh APK terbaru (draft release)](https://github.com/xykal/video-to-motion-photo/releases/tag/untagged-fadabafce0875d854d9e)** · [Lihat build CI](https://github.com/xykal/video-to-motion-photo/actions/workflows/android.yml)
+
+> Draft release mungkin memerlukan login GitHub. Aplikasi belum dinyatakan lulus uji lintas perangkat atau filter TikTok.
+
+## Fitur
+
+1. Pilih MP4 melalui pemilih dokumen Android.
+2. Pangkas bagian video sepanjang **1–30 detik**, dengan pratinjau dan tombol Batal/Selesai yang tetap terlihat.
+3. Pilih frame sampul pada 25%, 50%, atau 75% bagian yang dipangkas.
+4. Atur kecerahan/warna dan reduksi noise ringan **pada sampul saja**.
+5. Aktifkan atau matikan stabilisasi geser video. Stabilisasi ini memotong sedikit bagian tepi; belum menangani rotasi, rolling shutter, atau blur gerak.
+6. Aktifkan atau matikan watermark metadata. Saat aktif, area di balik label diberi efek blur GPU pada video; sampul menampilkan versi blur lokal. Jika efek GPU gagal, aplikasi mencoba ekspor **tanpa watermark** dan menampilkan pemberitahuan.
+7. Simpan hasil ke `Pictures/MotionPhoto` melalui MediaStore.
+
+Watermark membaca **make/model kamera hanya bila ditemukan pada tag QuickTime/MP4 yang didukung**. Bila tidak tersedia, label menyatakan tidak terdata. Angka MP adalah **megapiksel frame video, bukan sensor kamera**. Waktu rekam hanya ditulis bila metadata sumber berisi tanggal yang dapat dibaca. Lokasi tidak ditampilkan.
+
+## Batasan penting
+
+- Android 10+; berkas sumber maksimal **300 MB**. Pemrosesan video seluruhnya offline.
+- Bitrate encode yang lebih tinggi mengurangi kehilangan kualitas tambahan, **bukan** mengembalikan detail pada video yang sudah pecah. Platform seperti TikTok dapat mengompres ulang video.
+- Kompatibilitas Motion Photo berbeda antar galeri. Masalah warna setelah memakai filter TikTok **belum terverifikasi selesai** tanpa video contoh dan uji di perangkat.
+- Watermark kaca adalah efek blur dan highlight eksperimental, **bukan simulasi optik/refraction fisik**.
+- Proyek ini tidak membuat Apple Live Photo atau live wallpaper. Tidak ada modul `.so` buatan proyek; codec video mengandalkan Android/Media3.
+
+## Menjalankan dari sumber
+
+Buka proyek di Android Studio dengan JDK 17 dan Android SDK 35, sinkronkan Gradle, lalu jalankan modul `app`. Repo belum menyertakan Gradle wrapper; workflow CI menggunakan Gradle 8.9 dari `gradle/actions/setup-gradle`. Kode aplikasi Java berada di `app/src/main/java/id/xyverse/motionphoto/`.
+
+Workflow push menjalankan unit test dan build debug. Draft signed release dibuat **hanya** ketika workflow `Android` dijalankan manual dengan opsi `release=true`. Signing menggunakan GitHub Secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, dan `ANDROID_KEY_PASSWORD`. Jangan masukkan keystore atau kredensial ke repo. **Saat ini tidak ada cadangan keystore di luar GitHub**; kehilangan secrets berarti kunci untuk pembaruan APK tidak dapat dipulihkan.
+
+Lihat [brief teknis](docs/PRD.md), [arah desain](docs/DESIGN.md), dan [kebijakan keamanan](SECURITY.md).
+
+## English
+
+Motion Photo Studio is an offline native Android app that trims an MP4 and saves a JPEG Motion Photo with an embedded clip. It supports cover selection, limited translation-only stabilization, and an optional experimental metadata watermark on both the still and video. Source camera details are shown only when supported video metadata actually contains them. It cannot restore lost detail, guarantee gallery compatibility, or guarantee color behavior after third-party filters. See the Indonesian sections above for limits, build instructions, and signing requirements.
+
+Built by xykal — XyVerse Technology Global
