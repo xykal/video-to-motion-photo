@@ -31,11 +31,11 @@ public final class MainActivity extends Activity {
     private static final long MAX_BYTES = 300L * 1024 * 1024;
     private static final int INK = 0xff202521, MUTED = 0xff656d67, CREAM = 0xfff7f4ed;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private TextView status, export, enhanceButton, denoiseButton;
+    private TextView status, export, enhanceButton, denoiseButton, stabilizeButton;
     private final TextView[] coverButtons = new TextView[3];
     private ImageView preview;
     private Uri selected;
-    private boolean enhance, denoise, busy;
+    private boolean enhance, denoise, busy, stabilize = true;
     private int coverIndex = 1, previewGeneration;
 
     @Override public void onCreate(Bundle state) {
@@ -93,7 +93,11 @@ public final class MainActivity extends Activity {
         denoiseButton = action("Kurangi noise ringan", false);
         denoiseButton.setOnClickListener(v -> { denoise = !denoise; refreshStyles(); showPreview(); });
         page.addView(denoiseButton, margin(8, 8));
-        page.addView(text("Koreksi hanya pada foto sampul. Video aslinya tetap utuh; stabilisasi video belum tersedia.", 12, MUTED, false), margin(10, 0));
+        page.addView(text("03  VIDEO LEBIH TENANG", 12, MUTED, true), margin(24, 12));
+        stabilizeButton = action("Stabilkan video · aktif", false);
+        stabilizeButton.setOnClickListener(v -> { stabilize = !stabilize; refreshStyles(); });
+        page.addView(stabilizeButton, margin(0, 8));
+        page.addView(text("Stabilisasi translasi offline, durasi maks. 30 detik. Crop tepi 8% dan encode H.264 bitrate tinggi. Koreksi warna/noise hanya pada sampul; sumber buram tidak bisa dipulihkan.", 12, MUTED, false), margin(10, 0));
         export = action("Buat Motion Photo  →", true);
         export.setOnClickListener(v -> {
             if (selected == null || busy) return;
@@ -102,10 +106,10 @@ public final class MainActivity extends Activity {
             status.setText("Sedang memproses, jangan tutup aplikasi…");
             Uri input = selected;
             int index = coverIndex;
-            boolean correction = enhance, smoothing = denoise;
+            boolean correction = enhance, smoothing = denoise, stabilizeVideo = stabilize;
             worker.execute(() -> {
                 try {
-                    convert(input, index, correction, smoothing);
+                    convert(input, index, correction, smoothing, stabilizeVideo);
                     runOnUiThread(() -> status.setText("Berhasil. Cek Pictures/MotionPhoto di galeri."));
                 } catch (Exception error) {
                     runOnUiThread(() -> status.setText("Gagal: " + error.getMessage()));
@@ -164,9 +168,10 @@ public final class MainActivity extends Activity {
         return frame;
     }
 
-    private void convert(Uri source, int index, boolean correction, boolean smoothing) throws Exception {
+    private void convert(Uri source, int index, boolean correction, boolean smoothing, boolean stabilizeVideo) throws Exception {
         File temp = File.createTempFile("motion_", ".mp4", getCacheDir());
         Uri destination = null;
+        File processed = null;
         try {
             long length = 0;
             try (InputStream in = getContentResolver().openInputStream(source);
@@ -179,6 +184,15 @@ public final class MainActivity extends Activity {
                     if (length > MAX_BYTES) throw new IllegalArgumentException("Video melebihi 300 MB");
                     out.write(buffer, 0, count);
                 }
+            }
+            if (stabilizeVideo) {
+                processed = new File(getCacheDir(), "processed_" + java.util.UUID.randomUUID() + ".mp4");
+                runOnUiThread(() -> status.setText("Menganalisis guncangan & mengode ulang video…"));
+                new VideoProcessor(this).stabilize(temp, processed);
+                temp.delete();
+                temp = processed;
+                length = processed.length();
+                processed = null;
             }
             byte[] jpeg;
             try (MediaMetadataRetriever retriever = new MediaMetadataRetriever()) {
@@ -217,6 +231,7 @@ public final class MainActivity extends Activity {
         } finally {
             if (destination != null) getContentResolver().delete(destination, null, null);
             if (!temp.delete() && temp.exists()) temp.deleteOnExit();
+            if (processed != null && processed.exists()) processed.delete();
         }
     }
 
@@ -227,6 +242,9 @@ public final class MainActivity extends Activity {
         enhanceButton.setTextColor(enhance ? Color.WHITE : INK);
         denoiseButton.setBackground(shape(denoise ? INK : Color.WHITE, 14, 0xffe4e4dd));
         denoiseButton.setTextColor(denoise ? Color.WHITE : INK);
+        stabilizeButton.setText(stabilize ? "Stabilkan video · aktif" : "Stabilkan video · nonaktif");
+        stabilizeButton.setBackground(shape(stabilize ? INK : Color.WHITE, 14, 0xffe4e4dd));
+        stabilizeButton.setTextColor(stabilize ? Color.WHITE : INK);
     }
 
     private TextView action(String value, boolean primary) {

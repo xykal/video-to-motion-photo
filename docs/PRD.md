@@ -22,3 +22,6 @@ SAF supplies input access; output uses MediaStore pending state and cleans up fa
 1. Source and writer (2026-10-01): local implementation; build unverified.
 2. CI and signed draft release: blocked until persistent keystore and repository automation available.
 3. Device validation: real MP4s on Google Photos and Samsung Gallery, including audio, portrait rotation, and large files.
+
+## Offline stabilization v0.3 (experimental)
+For videos up to 30 seconds, sample 5 frames/s at low resolution, estimate global translations with luma block matching, smooth the motion path, and apply interpolated per-frame matrix corrections in Media3 Transformer. Re-encode H.264 with requested 8–25 Mbps depending on source resolution and retain the audio track. The Motion Photo embeds the processed video; no separate MP4 export. This does not correct rotation, rolling shutter, strong parallax, motion blur, or compression already in the source. Cropping is required; the output is not guaranteed to survive TikTok recompression unchanged. Test on physical low/mid/high-tier devices and real moving-subject footage before publishing.
