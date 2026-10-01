@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Bundle;
@@ -11,8 +13,9 @@ import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -26,60 +29,142 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final int PICK_VIDEO = 10;
     private static final long MAX_BYTES = 300L * 1024 * 1024;
+    private static final int INK = 0xff202521, MUTED = 0xff656d67, CREAM = 0xfff7f4ed;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private TextView status;
-    private Button pick;
+    private TextView status, export, enhanceButton, denoiseButton;
+    private final TextView[] coverButtons = new TextView[3];
+    private ImageView preview;
+    private Uri selected;
+    private boolean enhance, denoise, busy;
+    private int coverIndex = 1, previewGeneration;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(48, 80, 48, 48);
-        root.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = new TextView(this);
-        title.setText("Video ke Motion Photo");
-        title.setTextSize(26);
-        root.addView(title);
-        status = new TextView(this);
-        status.setText("Pilih MP4 (maks. 300 MB). Foto diambil dari tengah video. Hasil disimpan ke Pictures/MotionPhoto.");
-        status.setTextSize(16);
-        LinearLayout.LayoutParams spacing = new LinearLayout.LayoutParams(-1, -2);
-        spacing.topMargin = 32;
-        root.addView(status, spacing);
-        pick = new Button(this);
-        pick.setText("Pilih video");
+        getWindow().setStatusBarColor(CREAM);
+        getWindow().setNavigationBarColor(CREAM);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(CREAM);
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(24), dp(38), dp(24), dp(40));
+        scroll.addView(page);
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.mipmap.ic_launcher);
+        page.addView(logo, new LinearLayout.LayoutParams(dp(58), dp(58)));
+        TextView label = text("MOTION PHOTO STUDIO", 12, 0xffab534b, true);
+        page.addView(label, margin(0, 20));
+        TextView title = text("A moment,\nmade to move.", 34, INK, true);
+        page.addView(title, margin(0, 6));
+        page.addView(text("Ubah klip favorit jadi foto bergerak. Diproses di HP, tanpa unggah video.", 15, MUTED, false), margin(0, 12));
+
+        preview = new ImageView(this);
+        preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        preview.setBackground(shape(0xffe8e4da, 22, 0));
+        preview.setContentDescription("Pratinjau frame sampul video");
+        page.addView(preview, new LinearLayout.LayoutParams(-1, dp(206)));
+        TextView pick = action("Pilih video MP4  ↗", false);
         pick.setOnClickListener(v -> {
+            if (busy) return;
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             intent.setType("video/mp4");
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             startActivityForResult(intent, PICK_VIDEO);
         });
-        root.addView(pick, spacing);
-        TextView about = new TextView(this);
-        about.setText("Tentang · Powered by " + Brand.NAME + "\nOffline; video tidak diunggah. Dukungan galeri berbeda menurut perangkat.");
-        root.addView(about, spacing);
-        setContentView(root);
+        page.addView(pick, margin(14, 16));
+        page.addView(text("01  PILIH FOTO SAMPUL", 12, MUTED, true), margin(22, 12));
+        LinearLayout choices = new LinearLayout(this);
+        for (int i = 0; i < 3; i++) {
+            final int position = i;
+            TextView button = action(new String[]{"Awal · 25%", "Tengah · 50%", "Akhir · 75%"}[i], false);
+            button.setTextSize(12);
+            button.setOnClickListener(v -> { coverIndex = position; refreshStyles(); showPreview(); });
+            LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, dp(46), 1);
+            if (i > 0) cell.leftMargin = dp(6);
+            choices.addView(button, cell);
+            coverButtons[i] = button;
+        }
+        page.addView(choices, margin(10, 0));
+        page.addView(text("02  TAMPILAN SAMPUL", 12, MUTED, true), margin(24, 12));
+        enhanceButton = action("Cerah + warna", false);
+        enhanceButton.setOnClickListener(v -> { enhance = !enhance; refreshStyles(); showPreview(); });
+        page.addView(enhanceButton, margin(0, 8));
+        denoiseButton = action("Kurangi noise ringan", false);
+        denoiseButton.setOnClickListener(v -> { denoise = !denoise; refreshStyles(); showPreview(); });
+        page.addView(denoiseButton, margin(8, 8));
+        page.addView(text("Koreksi hanya pada foto sampul. Video aslinya tetap utuh; stabilisasi video belum tersedia.", 12, MUTED, false), margin(10, 0));
+        export = action("Buat Motion Photo  →", true);
+        export.setOnClickListener(v -> {
+            if (selected == null || busy) return;
+            busy = true;
+            export.setAlpha(.55f);
+            status.setText("Sedang memproses, jangan tutup aplikasi…");
+            Uri input = selected;
+            int index = coverIndex;
+            boolean correction = enhance, smoothing = denoise;
+            worker.execute(() -> {
+                try {
+                    convert(input, index, correction, smoothing);
+                    runOnUiThread(() -> status.setText("Berhasil. Cek Pictures/MotionPhoto di galeri."));
+                } catch (Exception error) {
+                    runOnUiThread(() -> status.setText("Gagal: " + error.getMessage()));
+                } finally {
+                    runOnUiThread(() -> { busy = false; export.setAlpha(1f); });
+                }
+            });
+        });
+        page.addView(export, margin(24, 0));
+        status = text("Pilih MP4 maksimal 300 MB untuk mulai.", 13, MUTED, false);
+        page.addView(status, margin(12, 0));
+        page.addView(text("Offline • Android 10+ • Powered by " + Brand.NAME, 11, MUTED, false), margin(34, 0));
+        setContentView(scroll);
+        refreshStyles();
     }
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
         if (request != PICK_VIDEO || result != RESULT_OK || data == null || data.getData() == null) return;
-        Uri source = data.getData();
-        pick.setEnabled(false);
-        status.setText("Memproses video…");
+        selected = data.getData();
+        status.setText("Video terpilih. Atur sampul lalu ekspor.");
+        showPreview();
+    }
+
+    private void showPreview() {
+        Uri input = selected;
+        if (input == null) return;
+        int generation = ++previewGeneration;
+        int index = coverIndex;
+        boolean correction = enhance, smoothing = denoise;
         worker.execute(() -> {
-            try {
-                convert(source);
-                runOnUiThread(() -> status.setText("Selesai. Periksa Pictures/MotionPhoto di galeri."));
-            } catch (Exception e) {
-                runOnUiThread(() -> status.setText("Gagal: " + e.getMessage()));
-            } finally {
-                runOnUiThread(() -> pick.setEnabled(true));
+            try (MediaMetadataRetriever retriever = new MediaMetadataRetriever()) {
+                retriever.setDataSource(this, input);
+                Bitmap frame = getCover(retriever, index);
+                Bitmap adjusted = CoverProcessor.process(frame, correction, smoothing);
+                if (adjusted != frame) frame.recycle();
+                Bitmap result = adjusted;
+                runOnUiThread(() -> {
+                    if (generation == previewGeneration && !isDestroyed()) preview.setImageBitmap(result);
+                    else result.recycle();
+                });
+            } catch (Exception ignored) {
+                runOnUiThread(() -> { if (generation == previewGeneration) status.setText("Pratinjau tidak tersedia. Coba video lain atau ekspor langsung."); });
             }
         });
     }
 
-    private void convert(Uri source) throws Exception {
+    private Bitmap getCover(MediaMetadataRetriever retriever, int index) {
+        String duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+        if (duration == null) throw new IllegalArgumentException("Durasi video tidak tersedia");
+        long millis = Long.parseLong(duration);
+        if (millis <= 0) throw new IllegalArgumentException("Durasi video tidak valid");
+        long microseconds = Math.multiplyExact(millis, (index + 1) * 250L);
+        Bitmap frame = retriever.getScaledFrameAtTime(microseconds, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 1600, 1600);
+        if (frame == null) throw new IllegalArgumentException("Frame tidak bisa dibaca");
+        return frame;
+    }
+
+    private void convert(Uri source, int index, boolean correction, boolean smoothing) throws Exception {
         File temp = File.createTempFile("motion_", ".mp4", getCacheDir());
         Uri destination = null;
         try {
@@ -95,22 +180,19 @@ public final class MainActivity extends Activity {
                     out.write(buffer, 0, count);
                 }
             }
-            if (length < 12) throw new IllegalArgumentException("Video kosong");
             byte[] jpeg;
             try (MediaMetadataRetriever retriever = new MediaMetadataRetriever()) {
                 retriever.setDataSource(temp.getAbsolutePath());
                 String mime = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE);
                 if (!"video/mp4".equalsIgnoreCase(mime)) throw new IllegalArgumentException("Hanya MP4 yang didukung");
-                String duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-                if (duration == null) throw new IllegalArgumentException("Durasi video tidak tersedia");
-                long midpointUs = Math.multiplyExact(Long.parseLong(duration), 500L);
-                Bitmap frame = retriever.getFrameAtTime(midpointUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
-                if (frame == null) throw new IllegalArgumentException("Frame video tidak bisa dibaca");
+                Bitmap frame = getCover(retriever, index);
+                Bitmap adjusted = CoverProcessor.process(frame, correction, smoothing);
+                if (adjusted != frame) frame.recycle();
                 try (ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
-                    if (!frame.compress(Bitmap.CompressFormat.JPEG, 90, bytes)) throw new IllegalStateException("Gagal mengode JPEG");
-                    jpeg = bytes.toByteArray();
-                } finally {
-                    frame.recycle();
+                    try {
+                        if (!adjusted.compress(Bitmap.CompressFormat.JPEG, 90, bytes)) throw new IllegalStateException("Gagal mengode JPEG");
+                        jpeg = bytes.toByteArray();
+                    } finally { adjusted.recycle(); }
                 }
             }
             ContentValues values = new ContentValues();
@@ -130,9 +212,7 @@ public final class MainActivity extends Activity {
             }
             ContentValues ready = new ContentValues();
             ready.put(MediaStore.Images.Media.IS_PENDING, 0);
-            if (getContentResolver().update(destination, ready, null, null) != 1) {
-                throw new IllegalStateException("Gagal memublikasikan foto");
-            }
+            if (getContentResolver().update(destination, ready, null, null) != 1) throw new IllegalStateException("Gagal memublikasikan foto");
             destination = null;
         } finally {
             if (destination != null) getContentResolver().delete(destination, null, null);
@@ -140,8 +220,41 @@ public final class MainActivity extends Activity {
         }
     }
 
-    @Override protected void onDestroy() {
-        worker.shutdown();
-        super.onDestroy();
+    private void refreshStyles() {
+        for (int i = 0; i < coverButtons.length; i++) coverButtons[i].setBackground(shape(i == coverIndex ? INK : 0xffffffff, 14, 0xffe4e4dd));
+        for (int i = 0; i < coverButtons.length; i++) coverButtons[i].setTextColor(i == coverIndex ? Color.WHITE : INK);
+        enhanceButton.setBackground(shape(enhance ? INK : Color.WHITE, 14, 0xffe4e4dd));
+        enhanceButton.setTextColor(enhance ? Color.WHITE : INK);
+        denoiseButton.setBackground(shape(denoise ? INK : Color.WHITE, 14, 0xffe4e4dd));
+        denoiseButton.setTextColor(denoise ? Color.WHITE : INK);
     }
+
+    private TextView action(String value, boolean primary) {
+        TextView view = text(value, 15, primary ? Color.WHITE : INK, true);
+        view.setGravity(Gravity.CENTER);
+        view.setMinHeight(dp(50));
+        view.setBackground(shape(primary ? 0xffd45c4f : Color.WHITE, 14, 0xffe4e4dd));
+        view.setClickable(true);
+        view.setFocusable(true);
+        return view;
+    }
+    private TextView text(String value, int size, int color, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(value); view.setTextSize(size); view.setTextColor(color);
+        if (bold) view.setTypeface(null, 1);
+        return view;
+    }
+    private GradientDrawable shape(int color, int radius, int stroke) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color); drawable.setCornerRadius(dp(radius));
+        if (stroke != 0) drawable.setStroke(dp(1), stroke);
+        return drawable;
+    }
+    private LinearLayout.LayoutParams margin(int top, int bottom) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.topMargin = dp(top); params.bottomMargin = dp(bottom);
+        return params;
+    }
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+    @Override protected void onDestroy() { worker.shutdown(); super.onDestroy(); }
 }

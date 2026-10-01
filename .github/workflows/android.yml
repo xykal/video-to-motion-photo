@@ -29,7 +29,7 @@ jobs:
           cache-disabled: true
       - name: Compile debug APK
         if: ${{ !inputs.release }}
-        run: gradle --no-daemon :app:assembleDebug
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
       - name: Verify signing configuration
         if: ${{ inputs.release }}
         env:
@@ -50,11 +50,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gradle --no-daemon :app:assembleRelease
+          gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)
+          test -n "$SIGNER"
+          "$SIGNER" verify --verbose app/build/outputs/apk/release/app-release.apk
           APK=app/build/outputs/apk/release/app-release.apk
           test -s "$APK"
           test -f "$ANDROID_KEYSTORE_FILE"
-          TAG="v0.1.0-build.${GITHUB_RUN_NUMBER}"
+          TAG="v0.2.0-build.${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" "$APK#video-to-motion-photo-${TAG}.apk" --draft --title "$TAG" --notes 'Signed draft APK. Gallery compatibility requires physical-device testing.' --target "$GITHUB_SHA"
       - name: Delete transient keystore
         if: always()

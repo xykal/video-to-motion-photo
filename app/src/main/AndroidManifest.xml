@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:label="Video ke Motion Photo" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:usesCleartextTraffic="false">
+    <application android:label="Motion Photo Studio" android:icon="@mipmap/ic_launcher" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:usesCleartextTraffic="false">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
